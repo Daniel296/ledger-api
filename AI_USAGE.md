@@ -18,9 +18,9 @@ I used Claude Code (Anthropic) as a pair programmer throughout this project.
 
 ## Instruction files
 
-Everything the assistant was given is committed:
+Everything the assistant was given is committed, all in [.claude](.claude):
 
-- [CLAUDE.md](CLAUDE.md): the project's rules (stack, domain rules, code and test conventions).
+- [.claude/CLAUDE.md](.claude/CLAUDE.md): the project's rules (stack, domain rules, code and test conventions).
 - [.claude/skills/implement-step](.claude/skills/implement-step/SKILL.md): the process every step
   follows, from contract to commits.
 - [.claude/agents/ledger-reviewer.md](.claude/agents/ledger-reviewer.md): the independent reviewer.

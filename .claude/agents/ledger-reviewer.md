@@ -18,7 +18,7 @@ Liquibase, Kafka, Testcontainers). Another model wrote the code; your job is an 
 - To try an edge case, extract `HEAD` into a scratch folder (`git archive HEAD | tar -x -C <dir>`),
   copy the working-tree files over it and probe there, never in the repository.
 - The challenge statement is a PDF given with the task; the prompt says where it is.
-- The conventions in CLAUDE.md and the decisions listed in the prompt are deliberate: do not argue them
+- The conventions in `.claude/CLAUDE.md` and the decisions listed in the prompt are deliberate: do not argue them
   unless they cause a real defect.
 
 ## What to look at

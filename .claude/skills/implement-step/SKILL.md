@@ -10,7 +10,7 @@ description: >-
 # Implementing a step
 
 The service is built in small steps, each ending in one or two reviewable commits. The coding rules
-live in [CLAUDE.md](../../../CLAUDE.md); this file is the process every step follows.
+live in [.claude/CLAUDE.md](../../CLAUDE.md); this file is the process every step follows.
 
 ## 1. Scope
 
@@ -58,7 +58,7 @@ again.
 
 ## 8. Documentation
 
-Update the README sections the step touches, and CLAUDE.md when a new rule was agreed.
+Update the README sections the step touches, and `.claude/CLAUDE.md` when a new rule was agreed.
 
 ## 9. Commits
 
