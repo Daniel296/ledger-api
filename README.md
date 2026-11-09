@@ -26,11 +26,9 @@ Stop everything with `docker compose down` (add `-v` to also drop the database v
 
 ## Persistence decisions
 
-- The schema is owned by Liquibase changelogs written as formatted SQL; Hibernate only validates
-  it (`ddl-auto: validate`), so the constraints the ledger relies on are explicit and reviewable.
+- The schema is owned by Liquibase changelogs written as formatted SQL, so the constraints the
+  ledger relies on are explicit and reviewable.
 - `open-in-view` is off: entities never leave a service transaction.
-- Paginating over a collection fetch fails instead of silently paging in memory
-  (`hibernate.query.fail_on_pagination_over_collection_fetch`).
 
 This README is completed as the service is built (API, design decisions, guarantees for consumers,
 improvements).

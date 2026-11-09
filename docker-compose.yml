@@ -16,7 +16,9 @@ services:
   ledger-api:
     build: .
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/ledger
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ledger
+      SPRING_DATASOURCE_USERNAME: ledger
+      SPRING_DATASOURCE_PASSWORD: ledger
     ports:
       - "8080:8080"
     depends_on:

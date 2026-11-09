@@ -34,6 +34,12 @@ service, starts it and runs the tests.
 
 ## Tests
 
+- Test classes end in `Should` (`MoneyShould`), never `Test`; methods read as the rest of the
+  sentence (`rejectMoreDecimalsThanTheCurrencyAllows`).
+- Unit and integration tests are never mixed: unit tests live under `com.coremaker.ledger.unit`
+  (plain JUnit, no Spring), integration tests under `com.coremaker.ledger.integration`, annotated
+  `@IntegrationTest`.
+- Keep tests as simple as possible; add test helpers only when a test needs them.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing
   behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks.
 - Every behaviour change comes with its test in the same change.
