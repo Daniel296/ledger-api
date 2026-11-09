@@ -26,6 +26,14 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final AccountValidator accountValidator;
 
+    @Transactional(readOnly = true)
+    public AccountResponse get(UUID id) {
+
+        return accountRepository.findById(id)
+                .map(AccountResponse::from)
+                .orElseThrow(() -> new NotFoundException(ACCOUNT_NOT_FOUND, "Account %s does not exist".formatted(id)));
+    }
+
     @Transactional
     public AccountResponse open(String currencyCode, BigDecimal overdraftLimit) {
 
@@ -42,11 +50,4 @@ public class AccountService {
         return AccountResponse.from(accountRepository.save(account));
     }
 
-    @Transactional(readOnly = true)
-    public AccountResponse get(UUID id) {
-
-        return accountRepository.findById(id)
-                .map(AccountResponse::from)
-                .orElseThrow(() -> new NotFoundException(ACCOUNT_NOT_FOUND, "Account %s does not exist".formatted(id)));
-    }
 }
