@@ -1,0 +1,501 @@
+openapi: 3.1.0
+info:
+  title: Ledger API
+  version: 1.0.0
+  description: |
+    A double-entry ledger. Money is held in accounts and moves only through transactions whose
+    debits and credits balance. Recorded transactions are never changed; a mistake is corrected
+    by reversing the transaction.
+
+    Conventions:
+    - Amounts are decimal strings (`"125.50"`), never JSON numbers, so no client parses them as
+      floating point.
+    - Every `POST` requires an `Idempotency-Key`. Retrying with the same key and body returns the
+      original response; the request takes effect at most once.
+    - Errors are `application/problem+json` (RFC 9457) with a stable `code` and, when the request
+      body is at fault, the JSON pointer of each offending field.
+    - The version is in the path. Within `v1` changes are additive only (new endpoints, new
+      optional fields, new error codes); clients must ignore fields they do not know.
+    - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
+      returns it on the response, writes it in its logs and in the announcements the request
+      causes, so one request can be followed end to end.
+servers:
+  - url: http://localhost:8080
+
+paths:
+  /v1/accounts:
+    post:
+      operationId: openAccount
+      summary: Open an account
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAccountRequest'
+            example:
+              currency: EUR
+      responses:
+        '201':
+          description: The account was opened.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /v1/accounts/{accountId}:
+    get:
+      operationId: getAccount
+      summary: Read an account with its current balance
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/accounts/{accountId}/entries:
+    get:
+      operationId: listAccountEntries
+      summary: Read an account's entries, newest first, each with the balance after it
+      description: |
+        Paged by cursor rather than offset, so entries recorded while a client pages through the
+        list never shift a page or show an entry twice.
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: cursor
+          in: query
+          description: The `nextCursor` of the previous page; omit it for the newest entries.
+          schema:
+            type: string
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: One page of entries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountEntriesPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/accounts/{accountId}/balance:
+    get:
+      operationId: getAccountBalance
+      summary: Read an account's balance as at a past instant
+      parameters:
+        - $ref: '#/components/parameters/AccountId'
+        - name: asOf
+          in: query
+          required: true
+          description: The balance after every entry recorded at or before this instant.
+          schema:
+            type: string
+            format: date-time
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The balance at that instant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Balance'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/transactions:
+    post:
+      operationId: recordTransaction
+      summary: Record a transaction
+      description: |
+        Recorded only if it has at least two entries, every amount is positive and fits its
+        currency's decimal places, all accounts exist and share one currency, debits equal credits,
+        and no account would go past its overdraft limit. All entries are recorded, or none.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecordTransactionRequest'
+            example:
+              description: Payout to Merchant 42
+              entries:
+                - accountId: 0b5e3a52-6d1c-4f0e-9a43-7c1f4f2d8a10
+                  direction: DEBIT
+                  amount: '100.00'
+                - accountId: 5f8c2d71-1e4b-4a9e-8b2f-3d6a9c0e7b21
+                  direction: CREDIT
+                  amount: '98.50'
+                - accountId: 9a1d4e63-2b7f-4c8a-a5e0-6f3b8d2c1e94
+                  direction: CREDIT
+                  amount: '1.50'
+      responses:
+        '201':
+          description: The transaction was recorded.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/IdempotencyConflict'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+  /v1/transactions/{transactionId}:
+    get:
+      operationId: getTransaction
+      summary: Read a transaction with its entries
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: The transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/transactions/{transactionId}/reversals:
+    post:
+      operationId: reverseTransaction
+      summary: Reverse a transaction
+      description: |
+        Records a new transaction with every entry of the original flipped (debit and credit
+        swapped), linked to the original. A transaction can be reversed only once, and a reversal
+        cannot be reversed. The reversal follows the same rules as any transaction, overdraft
+        limits included.
+      parameters:
+        - $ref: '#/components/parameters/TransactionId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '201':
+          description: The reversal was recorded.
+          headers:
+            Location:
+              $ref: '#/components/headers/Location'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: |
+            The transaction was already reversed (`TRANSACTION_ALREADY_REVERSED`), is itself a
+            reversal (`REVERSAL_NOT_REVERSIBLE`), or a request with this idempotency key is still
+            in progress (`IDEMPOTENCY_REQUEST_IN_PROGRESS`).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '422':
+          $ref: '#/components/responses/Unprocessable'
+
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        A unique value the client generates per operation (a UUID is a good choice) and reuses
+        when retrying it. Reusing a key with a different request is refused.
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 255
+    AccountId:
+      name: accountId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TransactionId:
+      name: transactionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Correlates this request with the ledger's logs and announcements.
+      schema:
+        type: string
+        maxLength: 100
+
+  headers:
+    Location:
+      description: The URL of the created resource.
+      schema:
+        type: string
+
+  schemas:
+    Amount:
+      type: string
+      pattern: '^-?[0-9]+(\.[0-9]+)?$'
+      description: An exact decimal amount, as a string.
+      examples:
+        - '125.50'
+
+    Currency:
+      type: string
+      description: An ISO 4217 code. The ledger supports EUR, USD (2 decimals) and JPY (0 decimals).
+      examples:
+        - EUR
+
+    Direction:
+      type: string
+      enum: [DEBIT, CREDIT]
+      description: A credit increases the account's balance, a debit decreases it.
+
+    OpenAccountRequest:
+      type: object
+      required: [currency]
+      properties:
+        currency:
+          $ref: '#/components/schemas/Currency'
+        overdraftLimit:
+          $ref: '#/components/schemas/Amount'
+          description: How far below zero the balance may go. Zero or positive; defaults to zero.
+
+    Account:
+      type: object
+      required: [id, currency, overdraftLimit, balance, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        currency:
+          $ref: '#/components/schemas/Currency'
+        overdraftLimit:
+          $ref: '#/components/schemas/Amount'
+        balance:
+          $ref: '#/components/schemas/Amount'
+        createdAt:
+          type: string
+          format: date-time
+
+    RecordTransactionRequest:
+      type: object
+      required: [description, entries]
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 255
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+
+    Entry:
+      type: object
+      required: [accountId, direction, amount]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        direction:
+          $ref: '#/components/schemas/Direction'
+        amount:
+          $ref: '#/components/schemas/Amount'
+
+    Transaction:
+      type: object
+      required: [id, description, entries, recordedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        description:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+        recordedAt:
+          type: string
+          format: date-time
+        reversalOf:
+          type: string
+          format: uuid
+          description: Present only on a reversal, the id of the transaction it reverses.
+
+    AccountEntry:
+      type: object
+      required: [transactionId, direction, amount, balanceAfter, recordedAt]
+      properties:
+        transactionId:
+          type: string
+          format: uuid
+        direction:
+          $ref: '#/components/schemas/Direction'
+        amount:
+          $ref: '#/components/schemas/Amount'
+        balanceAfter:
+          $ref: '#/components/schemas/Amount'
+        recordedAt:
+          type: string
+          format: date-time
+
+    AccountEntriesPage:
+      type: object
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountEntry'
+        nextCursor:
+          type: string
+          description: Absent on the last page.
+
+    Balance:
+      type: object
+      required: [accountId, currency, balance, asOf]
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        currency:
+          $ref: '#/components/schemas/Currency'
+        balance:
+          $ref: '#/components/schemas/Amount'
+        asOf:
+          type: string
+          format: date-time
+
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          description: |
+            A stable, machine-readable reason. New codes may be added within v1:
+            `MALFORMED_REQUEST`, `IDEMPOTENCY_KEY_MISSING`, `ACCOUNT_NOT_FOUND`,
+            `TRANSACTION_NOT_FOUND`, `INVALID_ACCOUNT`, `INVALID_TRANSACTION`,
+            `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`, `IDEMPOTENCY_KEY_REUSED`,
+            `IDEMPOTENCY_REQUEST_IN_PROGRESS`. The reasons behind `INVALID_ACCOUNT` and
+            `INVALID_TRANSACTION` are listed in `errors`.
+        errors:
+          type: array
+          description: The fields at fault, when the request body is the cause.
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [pointer, code, detail]
+      properties:
+        pointer:
+          type: string
+          description: JSON pointer to the field at fault, e.g. `/entries/1/amount`.
+        code:
+          type: string
+          description: |
+            `TOO_FEW_ENTRIES`, `NON_POSITIVE_AMOUNT`, `TOO_MANY_DECIMAL_PLACES`, `UNKNOWN_ACCOUNT`,
+            `CURRENCY_MISMATCH`, `UNBALANCED`, `INVALID_CURRENCY`, `UNSUPPORTED_CURRENCY`,
+            `NEGATIVE_OVERDRAFT_LIMIT`, `OVERDRAFT_LIMIT_EXCEEDED`.
+        detail:
+          type: string
+
+  responses:
+    BadRequest:
+      description: |
+        The request is malformed: invalid JSON, a missing field, a missing idempotency key, or an
+        invalid query parameter.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    NotFound:
+      description: The account or transaction in the path does not exist.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    IdempotencyConflict:
+      description: A request with this idempotency key is still in progress.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    Unprocessable:
+      description: |
+        The request is well formed but breaks a ledger rule, or reuses an idempotency key with a
+        different request. Nothing was recorded.
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+          example:
+            type: about:blank
+            title: Transaction refused
+            status: 422
+            code: INVALID_TRANSACTION
+            detail: Debits (100.00) and credits (99.00) do not balance.
+            errors:
+              - pointer: /entries
+                code: UNBALANCED
+                detail: Debits total 100.00 but credits total 99.00.
