@@ -36,10 +36,11 @@ public class AccountValidator {
         }
 
         if (isIsoCode(code)) {
-            throw new ValidationException(UNSUPPORTED_CURRENCY, "%s is not a currency the ledger supports".formatted(code));
+            throw new ValidationException(UNSUPPORTED_CURRENCY, "\"%s\" is not a currency the ledger supports".formatted(code));
         }
 
-        throw new ValidationException(INVALID_CURRENCY, "%s is not an ISO 4217 currency code".formatted(code));
+        throw new ValidationException(INVALID_CURRENCY,
+                "\"%s\" is not an ISO 4217 currency code (three uppercase letters)".formatted(code));
     }
 
     private void checkNotNegative(BigDecimal overdraftLimit) {
@@ -52,7 +53,9 @@ public class AccountValidator {
     private void checkDecimalPlaces(Currency currency, BigDecimal overdraftLimit) {
 
         if (!currency.fits(overdraftLimit)) {
-            throw new ValidationException(TOO_MANY_DECIMAL_PLACES, "Overdraft limit %s has more decimal places than %s allows (%d)".formatted(overdraftLimit.toPlainString(), currency, currency.getDecimals()));
+            throw new ValidationException(TOO_MANY_DECIMAL_PLACES,
+                    "Overdraft limit %s has more decimal places than %s allows (%d)"
+                            .formatted(overdraftLimit.toPlainString(), currency, currency.getDecimals()));
         }
     }
 

@@ -13,7 +13,9 @@ info:
     - Every `POST` requires an `Idempotency-Key`. Retrying with the same key and body returns the
       original response; the request takes effect at most once.
     - An error is `{"errorCode", "message"}`: a stable code a system can act on, and a message
-      naming the value at fault. Only the first broken rule is reported.
+      naming the value at fault. Only the first broken rule is reported. Errors raised by the HTTP
+      layer itself (400 for a malformed request, 405, 415, 500) come with Spring Boot's standard
+      error body.
     - The version is in the path. Within `v1` changes are additive only (new endpoints, new
       optional fields, new error codes); clients must ignore fields they do not know.
     - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
@@ -431,7 +433,6 @@ components:
           type: string
           description: |
             A stable, machine-readable reason. New codes may be added within v1.
-            400: `MALFORMED_REQUEST`, `IDEMPOTENCY_KEY_MISSING`.
             404: `ACCOUNT_NOT_FOUND`, `TRANSACTION_NOT_FOUND`.
             409: `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`,
             `IDEMPOTENCY_REQUEST_IN_PROGRESS`.
@@ -444,12 +445,9 @@ components:
   responses:
     BadRequest:
       description: |
-        The request is malformed: invalid JSON, a missing field, a missing idempotency key, or an
-        invalid path or query parameter.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
+        The request is malformed: invalid JSON, a missing field, a value in the wrong format, a missing
+        idempotency key, or an invalid path or query parameter. Answered by the HTTP layer with
+        Spring Boot's standard error body.
     NotFound:
       description: The account or transaction in the path does not exist.
       content:

@@ -26,7 +26,9 @@ Stop everything with `docker compose down` (add `-v` to also drop the database v
 
 ## API
 
-The contract is written first and lives in [docs/openapi.yaml](docs/openapi.yaml).
+The contract is written first and lives in [docs/openapi.yaml](docs/openapi.yaml). Every response an
+integration test receives is checked against it (status, headers, body), and every operation a test
+calls must exist in it. What no test calls is not checked, so each endpoint comes with its tests.
 
 | Method | Path | |
 |---|---|---|

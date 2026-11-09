@@ -31,14 +31,18 @@ service, starts it and runs the tests.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Constructor injection only, depending on abstractions.
+- Lines are at most 128 characters.
 - Never build strings with `+`: use `"...%s...".formatted(...)` (and `{}` placeholders in log calls).
 - No Javadoc or doc blocks. Comment only a non-obvious "why", in one short line.
 - Keep code airy: a blank line after a class, enum, method or loop opening line, after every closed
   block (`}`) that more code follows, and between logical groups of statements.
 - Validators stop at the first broken rule and throw a `ValidationException` (code, message).
-- An API error is `{"errorCode", "message"}`. Validators never know request field names; the
+- An API error is `{"errorCode", "message"}`, only for the ledger's own errors (`ErrorCode`), mapped in
+  `exception/ApiExceptionHandler` by exception type. Errors of the HTTP layer (400 malformed request,
+  405, 415, 500) are left to Spring Boot's standard handling. Validators never know request field names; the
   message names the value at fault (the amount, the account id).
-- Error codes are a single `ErrorCode` enum in `exception`, used through static imports.
+- Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the
+  `Currency` constants (`EUR`, not `Currency.EUR`).
 - An account with no overdraft limit (the settlement accounts) is marked explicitly with
   `unlimitedOverdraft`; `overdraftLimit` is never null and defaults to zero.
 - Never query inside a loop; never re-read data already loaded.
@@ -51,6 +55,9 @@ service, starts it and runs the tests.
   (plain JUnit, no Spring), integration tests under `com.coremaker.ledger.integration`, annotated
   `@IntegrationTest`.
 - Keep tests as simple as possible; add test helpers only when a test needs them.
+- No shared test data in fields: each test builds the objects it needs through general helpers
+  (`account(...)`, `debit(...)`); only the class under test and its mocks are fields.
+- Integration tests check every response against `docs/openapi.yaml` (`OpenApiContractConfiguration`).
 - Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo; Lombok-generated
   code is excluded through `lombok.config`), with no test that only restates the code.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing

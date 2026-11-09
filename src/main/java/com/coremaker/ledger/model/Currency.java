@@ -1,6 +1,7 @@
 package com.coremaker.ledger.model;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -18,5 +19,11 @@ public enum Currency {
     public boolean fits(BigDecimal amount) {
 
         return amount.stripTrailingZeros().scale() <= decimals;
+    }
+
+    // Money is never rounded: an amount that does not fit its currency throws instead
+    public String format(BigDecimal amount) {
+
+        return amount.setScale(decimals, RoundingMode.UNNECESSARY).toPlainString();
     }
 }
