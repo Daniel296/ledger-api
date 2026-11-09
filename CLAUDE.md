@@ -2,8 +2,18 @@
 
 ## Project
 
-A double-entry ledger service (coding challenge). Stack: Java 17, Spring Boot 4, MySQL, Kafka, Maven.
-Everything must run in Docker; one script builds the service, starts it and runs the tests.
+A double-entry ledger service (coding challenge). Stack: Java 17, Spring Boot 4, Spring Data JPA
+(Hibernate), MySQL, Liquibase, Kafka, Maven. Everything must run in Docker; `run.sh` builds the
+service, starts it and runs the tests.
+
+## Persistence rules
+
+- Liquibase owns the schema, as formatted SQL changelogs; Hibernate only validates (`ddl-auto: validate`).
+- Accounts are locked pessimistically (`@Lock(PESSIMISTIC_WRITE)`), always in ascending id order.
+- Transactions and entries are `@Immutable`.
+- `open-in-view` stays off; explicit queries use `@Query`.
+- Never paginate over a collection fetch; page the account statement with keyset, not offset.
+- Add a dependency or a setting only when code needs it.
 
 ## Domain rules that must never be broken
 
