@@ -9,6 +9,7 @@ service, starts it and runs the tests.
 ## Persistence rules
 
 - Liquibase owns the schema, as formatted SQL changelogs; Hibernate only validates (`ddl-auto: validate`).
+- A committed changeset is never edited: every schema change is a new changeset.
 - Accounts are locked pessimistically (`@Lock(PESSIMISTIC_WRITE)`), always in ascending id order.
 - Transactions and entries are `@Immutable`.
 - `open-in-view` stays off; explicit queries use `@Query`.
@@ -32,13 +33,13 @@ service, starts it and runs the tests.
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Constructor injection only, depending on abstractions.
 - Lines are at most 128 characters.
-- Call chains with more than two calls (streams, builders, requests): one call per line, `.stream()`
-  included. Assertions (`assertThat(...).isEqualTo(...)`) may stay on one line.
+- Call chains with more than two calls (streams, builders, requests): one call per line, with
+  `.stream()` kept next to its source (`entries.stream()`). Assertions may stay on one line.
 - Method order in controllers and services: reads (get) first, then create (post), then update (put)
   and delete; private helpers last.
 - No method or variable named after a restricted identifier (`record`, `var`, `yield`, `sealed`, `permits`).
 - Never build strings with `+`: use `"...%s...".formatted(...)` (and `{}` placeholders in log calls).
-- No Javadoc or doc blocks. Comment only a non-obvious "why", in one short line.
+- No comments and no Javadoc: method and variable names say what the code does.
 - Keep code airy: a blank line after a class, enum, method or loop opening line, after every closed
   block (`}`) that more code follows, and between logical groups of statements.
 - Validators stop at the first broken rule and throw a `ValidationException` (code, message).

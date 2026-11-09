@@ -12,13 +12,10 @@ import com.atlassian.oai.validator.report.ValidationReport.Level;
 @TestConfiguration(proxyBeanMethods = false)
 class OpenApiContractConfiguration {
 
-    // Every response an integration test receives must match docs/openapi.yaml, and every operation it
-    // calls must exist there. Request content is not checked, since some tests send invalid requests on
-    // purpose, and paths outside the API (actuator) are skipped.
     @Bean
     MockMvcBuilderCustomizer openApiContract() {
 
-        var ignored = LevelResolver.create()
+        var requestChecksTestsBreakOnPurpose = LevelResolver.create()
                 .withLevel("validation.request.path.missing", Level.IGNORE)
                 .withLevel("validation.request.body", Level.IGNORE)
                 .withLevel("validation.request.parameter", Level.IGNORE)
@@ -26,7 +23,7 @@ class OpenApiContractConfiguration {
                 .withLevel("validation.request.accept", Level.IGNORE)
                 .build();
         var validator = OpenApiInteractionValidator.createForSpecificationUrl("docs/openapi.yaml")
-                .withLevelResolver(ignored)
+                .withLevelResolver(requestChecksTestsBreakOnPurpose)
                 .build();
         return builder -> builder.alwaysExpect(OpenApiValidationMatchers.openApi().isValid(validator));
     }

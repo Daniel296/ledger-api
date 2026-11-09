@@ -45,7 +45,6 @@ public class AccountService {
             account.setOverdraftLimit(overdraftLimit);
         }
 
-        // The database keeps microseconds, so the response matches what a later read returns
         account.setCreatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         return AccountResponse.from(accountRepository.save(account));
     }

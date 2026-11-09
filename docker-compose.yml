@@ -7,7 +7,6 @@ services:
       MYSQL_PASSWORD: ledger
       MYSQL_ROOT_PASSWORD: root
     healthcheck:
-      # TCP, not the socket: the init phase runs a temporary server without networking
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uledger", "-pledger"]
       interval: 5s
       timeout: 5s

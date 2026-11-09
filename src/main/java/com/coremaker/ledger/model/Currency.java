@@ -21,7 +21,6 @@ public enum Currency {
         return amount.stripTrailingZeros().scale() <= decimals;
     }
 
-    // Money is never rounded: an amount that does not fit its currency throws instead
     public String format(BigDecimal amount) {
 
         return amount.setScale(decimals, RoundingMode.UNNECESSARY).toPlainString();
