@@ -15,7 +15,7 @@ import java.util.UUID;
 
 import org.springframework.stereotype.Component;
 
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
@@ -40,7 +40,7 @@ public class TransactionValidator {
     private void checkAtLeastTwoEntries(List<Entry> entries) {
 
         if (entries.size() < 2) {
-            throw new ValidationException(TOO_FEW_ENTRIES, "A transaction needs at least two entries");
+            throw new LedgerException(TOO_FEW_ENTRIES, "A transaction needs at least two entries");
         }
     }
 
@@ -49,7 +49,7 @@ public class TransactionValidator {
         for (var entry : entries) {
 
             if (entry.getAmount().signum() <= 0) {
-                throw new ValidationException(NON_POSITIVE_AMOUNT,
+                throw new LedgerException(NON_POSITIVE_AMOUNT,
                         "Amount %s must be positive".formatted(entry.getAmount().toPlainString()));
             }
         }
@@ -60,7 +60,7 @@ public class TransactionValidator {
         for (var entry : entries) {
 
             if (!accounts.containsKey(entry.getAccountId())) {
-                throw new ValidationException(UNKNOWN_ACCOUNT, "Account %s does not exist".formatted(entry.getAccountId()));
+                throw new LedgerException(UNKNOWN_ACCOUNT, "Account %s does not exist".formatted(entry.getAccountId()));
             }
         }
     }
@@ -72,7 +72,7 @@ public class TransactionValidator {
 
             var entryCurrency = currencyOf(entry, accounts);
             if (entryCurrency != currency) {
-                throw new ValidationException(CURRENCY_MISMATCH,
+                throw new LedgerException(CURRENCY_MISMATCH,
                         "Account %s is in %s, the transaction is in %s"
                                 .formatted(entry.getAccountId(), entryCurrency, currency));
             }
@@ -85,7 +85,7 @@ public class TransactionValidator {
 
             var currency = currencyOf(entry, accounts);
             if (!currency.fits(entry.getAmount())) {
-                throw new ValidationException(TOO_MANY_DECIMAL_PLACES,
+                throw new LedgerException(TOO_MANY_DECIMAL_PLACES,
                         "Amount %s has more decimal places than %s allows (%d)"
                                 .formatted(entry.getAmount().toPlainString(), currency, currency.getDecimals()));
             }
@@ -97,7 +97,7 @@ public class TransactionValidator {
         var debits = total(entries, Direction.DEBIT);
         var credits = total(entries, Direction.CREDIT);
         if (debits.compareTo(credits) != 0) {
-            throw new ValidationException(UNBALANCED,
+            throw new LedgerException(UNBALANCED,
                     "Debits total %s but credits total %s".formatted(debits.toPlainString(), credits.toPlainString()));
         }
     }
@@ -109,7 +109,7 @@ public class TransactionValidator {
             var account = accounts.get(entry.getAccountId());
             var balanceAfter = account.getBalance().add(netChange(account, entries));
             if (!account.isUnlimitedOverdraft() && balanceAfter.compareTo(account.getOverdraftLimit().negate()) < 0) {
-                throw new ValidationException(OVERDRAFT_LIMIT_EXCEEDED,
+                throw new LedgerException(OVERDRAFT_LIMIT_EXCEEDED,
                         "Account %s would go to %s, past its overdraft limit of %s".formatted(
                                 account.getId(),
                                 account.getCurrency().format(balanceAfter),

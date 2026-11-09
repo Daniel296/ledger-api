@@ -48,9 +48,10 @@ service, starts it and runs the tests.
 - No comments and no Javadoc: method and variable names say what the code does.
 - Keep code airy: a blank line after a class, enum, method or loop opening line, after every closed
   block (`}`) that more code follows, and between logical groups of statements.
-- Validators stop at the first broken rule and throw a `ValidationException` (code, message).
-- An API error is `{"errorCode", "message"}`, only for the ledger's own errors (`ErrorCode`), mapped in
-  `exception/handler/ApiExceptionHandler` by exception type. Errors of the HTTP layer (400 malformed request,
+- Validators stop at the first broken rule and throw a `LedgerException` (code, message).
+- The ledger's own errors are one `LedgerException` carrying an `ErrorCode`. The API answers them as
+  `{"errorCode", "message"}`, and `exception/handler/ApiExceptionHandler` picks the HTTP status from the code
+  (404 not found, 409 conflict, 422 for every broken rule). Errors of the HTTP layer (400 malformed request,
   405, 415, 500) are left to Spring Boot's standard handling. Validators never know request field names; the
   message names the value at fault (the amount, the account id).
 - Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the

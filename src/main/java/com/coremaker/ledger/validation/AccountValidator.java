@@ -9,7 +9,7 @@ import java.math.BigDecimal;
 
 import org.springframework.stereotype.Component;
 
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.enums.Currency;
 
 @Component
@@ -36,24 +36,24 @@ public class AccountValidator {
         }
 
         if (isIsoCode(code)) {
-            throw new ValidationException(UNSUPPORTED_CURRENCY, "\"%s\" is not a currency the ledger supports".formatted(code));
+            throw new LedgerException(UNSUPPORTED_CURRENCY, "\"%s\" is not a currency the ledger supports".formatted(code));
         }
 
-        throw new ValidationException(INVALID_CURRENCY,
+        throw new LedgerException(INVALID_CURRENCY,
                 "\"%s\" is not an ISO 4217 currency code (three uppercase letters)".formatted(code));
     }
 
     private void checkNotNegative(BigDecimal overdraftLimit) {
 
         if (overdraftLimit.signum() < 0) {
-            throw new ValidationException(NEGATIVE_OVERDRAFT_LIMIT, "The overdraft limit cannot be negative");
+            throw new LedgerException(NEGATIVE_OVERDRAFT_LIMIT, "The overdraft limit cannot be negative");
         }
     }
 
     private void checkDecimalPlaces(Currency currency, BigDecimal overdraftLimit) {
 
         if (!currency.fits(overdraftLimit)) {
-            throw new ValidationException(TOO_MANY_DECIMAL_PLACES,
+            throw new LedgerException(TOO_MANY_DECIMAL_PLACES,
                     "Overdraft limit %s has more decimal places than %s allows (%d)"
                             .formatted(overdraftLimit.toPlainString(), currency, currency.getDecimals()));
         }

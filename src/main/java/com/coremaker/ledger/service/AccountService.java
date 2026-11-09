@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.coremaker.ledger.dto.response.AccountResponse;
-import com.coremaker.ledger.exception.NotFoundException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.repository.AccountRepository;
@@ -31,7 +31,7 @@ public class AccountService {
 
         return accountRepository.findById(id)
                 .map(AccountResponse::from)
-                .orElseThrow(() -> new NotFoundException(ACCOUNT_NOT_FOUND, "Account %s does not exist".formatted(id)));
+                .orElseThrow(() -> new LedgerException(ACCOUNT_NOT_FOUND, "Account %s does not exist".formatted(id)));
     }
 
     @Transactional

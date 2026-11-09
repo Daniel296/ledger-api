@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.TransactionResponse;
-import com.coremaker.ledger.exception.NotFoundException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
@@ -38,7 +38,7 @@ public class TransactionService {
 
         return transactionRepository.findById(id)
                 .map(TransactionResponse::from)
-                .orElseThrow(() -> new NotFoundException(TRANSACTION_NOT_FOUND, "Transaction %s does not exist".formatted(id)));
+                .orElseThrow(() -> new LedgerException(TRANSACTION_NOT_FOUND, "Transaction %s does not exist".formatted(id)));
     }
 
     @Transactional

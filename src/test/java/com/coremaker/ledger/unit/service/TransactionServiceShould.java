@@ -25,8 +25,7 @@ import org.mockito.ArgumentCaptor;
 import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.EntryResponse;
-import com.coremaker.ledger.exception.NotFoundException;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
@@ -99,7 +98,7 @@ class TransactionServiceShould {
 
         var unbalanced = request(entry(merchant, DEBIT, "100.00"), entry(payouts, CREDIT, "99.00"));
 
-        assertThatThrownBy(() -> transactionService.post(unbalanced)).isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> transactionService.post(unbalanced)).isInstanceOf(LedgerException.class);
 
         verify(transactionRepository, never()).save(any());
         assertThat(merchant.getBalance()).isEqualByComparingTo("25.50");
@@ -130,7 +129,7 @@ class TransactionServiceShould {
         when(transactionRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> transactionService.get(id))
-                .isInstanceOfSatisfying(NotFoundException.class,
+                .isInstanceOfSatisfying(LedgerException.class,
                         notFound -> assertThat(notFound.getCode()).isEqualTo(TRANSACTION_NOT_FOUND));
     }
 

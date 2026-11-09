@@ -22,7 +22,7 @@ import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
 import com.coremaker.ledger.exception.ErrorCode;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
@@ -87,9 +87,12 @@ class TransactionValidatorShould {
 
         var merchant42 = account(EUR, "0", "25.50");
         var payouts = account(EUR, "0", "98.50");
+        var accounts = List.of(merchant42, payouts);
+        var debit = debit(merchant42, "50.00");
+        var credit = credit(payouts, "50.00");
 
-        assertThatThrownBy(() -> validate(List.of(merchant42, payouts), debit(merchant42, "50.00"), credit(payouts, "50.00")))
-                .isInstanceOfSatisfying(ValidationException.class,
+        assertThatThrownBy(() -> validate(accounts, debit, credit))
+                .isInstanceOfSatisfying(LedgerException.class,
                         refusal -> assertThat(refusal.getCode()).isEqualTo(OVERDRAFT_LIMIT_EXCEEDED))
                 .hasMessage("Account %s would go to -24.50, past its overdraft limit of 0.00", merchant42.getId());
     }
@@ -156,7 +159,7 @@ class TransactionValidatorShould {
     private void assertRefused(ErrorCode code, List<Account> accounts, Entry... entries) {
 
         assertThatThrownBy(() -> validate(accounts, entries))
-                .isInstanceOfSatisfying(ValidationException.class, refusal -> assertThat(refusal.getCode()).isEqualTo(code));
+                .isInstanceOfSatisfying(LedgerException.class, refusal -> assertThat(refusal.getCode()).isEqualTo(code));
     }
 
     private static Account account(Currency currency, String overdraftLimit, String balance) {

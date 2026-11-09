@@ -1,28 +1,30 @@
 package com.coremaker.ledger.exception.handler;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import com.coremaker.ledger.dto.response.ErrorResponse;
-import com.coremaker.ledger.exception.NotFoundException;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.ErrorCode;
+import com.coremaker.ledger.exception.LedgerException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {
 
     @ExceptionHandler
-    @ResponseStatus(HttpStatus.UNPROCESSABLE_CONTENT)
-    public ErrorResponse brokenRule(ValidationException exception) {
+    public ResponseEntity<ErrorResponse> ledgerError(LedgerException exception) {
 
-        return new ErrorResponse(exception.getCode(), exception.getMessage());
+        return ResponseEntity
+                .status(statusOf(exception.getCode()))
+                .body(new ErrorResponse(exception.getCode(), exception.getMessage()));
     }
 
-    @ExceptionHandler
-    @ResponseStatus(HttpStatus.NOT_FOUND)
-    public ErrorResponse notFound(NotFoundException exception) {
+    private static HttpStatus statusOf(ErrorCode code) {
 
-        return new ErrorResponse(exception.getCode(), exception.getMessage());
+        return switch (code) {
+            case ACCOUNT_NOT_FOUND, TRANSACTION_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            default -> HttpStatus.UNPROCESSABLE_CONTENT;
+        };
     }
 }

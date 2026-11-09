@@ -1,5 +1,6 @@
 package com.coremaker.ledger.integration.concurrency;
 
+import static com.coremaker.ledger.exception.ErrorCode.OVERDRAFT_LIMIT_EXCEEDED;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static com.coremaker.ledger.model.enums.Direction.CREDIT;
 import static com.coremaker.ledger.model.enums.Direction.DEBIT;
@@ -19,7 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
@@ -44,7 +45,10 @@ class ConcurrentTransactionsShould {
 
         var failures = runAtOnce(20, attempt -> transfer(merchant, payouts, "10.00"));
 
-        assertThat(failures).hasSize(10).allMatch(ValidationException.class::isInstance);
+        assertThat(failures)
+                .hasSize(10)
+                .allMatch(failure -> failure instanceof LedgerException refusal
+                        && refusal.getCode() == OVERDRAFT_LIMIT_EXCEEDED);
         assertThat(balance(merchant)).isEqualByComparingTo("0");
         assertThat(balance(payouts)).isEqualByComparingTo("100.00");
     }

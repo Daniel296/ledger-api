@@ -15,7 +15,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import com.coremaker.ledger.exception.ErrorCode;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.validation.AccountValidator;
 
 class AccountValidatorShould {
@@ -57,6 +57,6 @@ class AccountValidatorShould {
     private void assertRefused(String currencyCode, BigDecimal overdraftLimit, ErrorCode code) {
 
         assertThatThrownBy(() -> validator.validate(currencyCode, overdraftLimit))
-                .isInstanceOfSatisfying(ValidationException.class, refusal -> assertThat(refusal.getCode()).isEqualTo(code));
+                .isInstanceOfSatisfying(LedgerException.class, refusal -> assertThat(refusal.getCode()).isEqualTo(code));
     }
 }

@@ -16,8 +16,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
-import com.coremaker.ledger.exception.NotFoundException;
-import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.service.AccountService;
@@ -56,7 +55,7 @@ class AccountServiceShould {
     @Test
     void saveNothingWhenTheRequestBreaksARule() {
 
-        assertThatThrownBy(() -> accountService.open("GBP", null)).isInstanceOf(ValidationException.class);
+        assertThatThrownBy(() -> accountService.open("GBP", null)).isInstanceOf(LedgerException.class);
         verifyNoInteractions(accountRepository);
     }
 
@@ -83,7 +82,7 @@ class AccountServiceShould {
         when(accountRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> accountService.get(id))
-                .isInstanceOfSatisfying(NotFoundException.class,
+                .isInstanceOfSatisfying(LedgerException.class,
                         notFound -> assertThat(notFound.getCode()).isEqualTo(ACCOUNT_NOT_FOUND));
     }
 
