@@ -3,3 +3,9 @@ spring:
     name: ledger-api
   jpa:
     open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        type:
+          preferred_uuid_jdbc_type: CHAR

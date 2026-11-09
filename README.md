@@ -53,7 +53,17 @@ The contract is written first and lives in [docs/openapi.yaml](docs/openapi.yaml
 
 - The schema is owned by Liquibase changelogs written as formatted SQL, so the constraints the
   ledger relies on are explicit and reviewable.
+- Hibernate only validates the schema (`ddl-auto: validate`); it never creates or changes it.
 - `open-in-view` is off: entities never leave a service transaction.
+- Money is `DECIMAL(19, 4)`: exact, and room for 15 integer digits.
+- Accounts and transactions have UUIDs: they are public identifiers, so they must not be guessable
+  or reveal volumes. Entries are internal and keep an auto-increment id (which also means Hibernate
+  inserts them one by one, without JDBC batching).
+- Transactions and entries are `@Immutable`: Hibernate never issues an `UPDATE` for them.
+- The ledger's own settlement accounts are created by the migration, with no overdraft limit and
+  fixed random ids: EUR `ffd6f25c-cbbb-43ae-afe5-1834678bb9aa`, USD
+  `91509bf3-2df9-43f8-89e3-2283c7f5a97d`, JPY `7bba09b3-74f5-4fbd-9315-25c9c98e4f94`. The PDF names
+  only EUR and JPY; USD gets one too, since the ledger supports it and a USD payment needs it.
 
 This README is completed as the service is built (API, design decisions, guarantees for consumers,
 improvements).
