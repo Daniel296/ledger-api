@@ -10,7 +10,7 @@ import java.math.BigDecimal;
 import org.springframework.stereotype.Component;
 
 import com.coremaker.ledger.exception.ValidationException;
-import com.coremaker.ledger.model.Currency;
+import com.coremaker.ledger.model.enums.Currency;
 
 @Component
 public class AccountValidator {

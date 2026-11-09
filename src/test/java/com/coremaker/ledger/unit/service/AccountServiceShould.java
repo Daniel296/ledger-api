@@ -1,7 +1,7 @@
 package com.coremaker.ledger.unit.service;
 
 import static com.coremaker.ledger.exception.ErrorCode.ACCOUNT_NOT_FOUND;
-import static com.coremaker.ledger.model.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;

@@ -17,10 +17,10 @@ import org.springframework.stereotype.Component;
 
 import com.coremaker.ledger.exception.ValidationException;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
-import com.coremaker.ledger.model.Direction;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
+import com.coremaker.ledger.model.enums.Currency;
+import com.coremaker.ledger.model.enums.Direction;
 
 @Component
 public class TransactionValidator {

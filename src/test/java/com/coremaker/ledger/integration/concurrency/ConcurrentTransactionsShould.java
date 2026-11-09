@@ -1,8 +1,8 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.concurrency;
 
-import static com.coremaker.ledger.model.Currency.EUR;
-import static com.coremaker.ledger.model.Direction.CREDIT;
-import static com.coremaker.ledger.model.Direction.DEBIT;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Direction.CREDIT;
+import static com.coremaker.ledger.model.enums.Direction.DEBIT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
@@ -17,9 +17,10 @@ import java.util.function.IntFunction;
 import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.beans.factory.annotation.Autowired;
 
-import com.coremaker.ledger.dto.EntryRequest;
-import com.coremaker.ledger.dto.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.EntryRequest;
+import com.coremaker.ledger.dto.request.RecordTransactionRequest;
 import com.coremaker.ledger.exception.ValidationException;
+import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.service.TransactionService;

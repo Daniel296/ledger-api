@@ -1,4 +1,4 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.support;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.MockMvcBuilderCustomizer;

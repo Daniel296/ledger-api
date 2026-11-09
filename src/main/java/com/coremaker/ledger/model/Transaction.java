@@ -7,6 +7,8 @@ import java.util.UUID;
 
 import org.hibernate.annotations.Immutable;
 
+import com.coremaker.ledger.model.enums.Currency;
+
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;

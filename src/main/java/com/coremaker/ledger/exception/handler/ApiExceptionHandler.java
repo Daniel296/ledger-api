@@ -1,11 +1,13 @@
-package com.coremaker.ledger.exception;
+package com.coremaker.ledger.exception.handler;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import com.coremaker.ledger.dto.ErrorResponse;
+import com.coremaker.ledger.dto.response.ErrorResponse;
+import com.coremaker.ledger.exception.NotFoundException;
+import com.coremaker.ledger.exception.ValidationException;
 
 @RestControllerAdvice
 public class ApiExceptionHandler {

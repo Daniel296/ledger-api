@@ -1,8 +1,8 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.repository;
 
-import static com.coremaker.ledger.model.Currency.EUR;
-import static com.coremaker.ledger.model.Currency.JPY;
-import static com.coremaker.ledger.model.Currency.USD;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.JPY;
+import static com.coremaker.ledger.model.enums.Currency.USD;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
@@ -13,8 +13,9 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
+import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.repository.AccountRepository;
 
 @IntegrationTest

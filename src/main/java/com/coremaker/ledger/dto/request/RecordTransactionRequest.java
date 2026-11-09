@@ -1,4 +1,4 @@
-package com.coremaker.ledger.dto;
+package com.coremaker.ledger.dto.request;
 
 import java.util.List;
 

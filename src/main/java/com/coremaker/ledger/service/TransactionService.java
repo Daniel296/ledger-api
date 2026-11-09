@@ -12,9 +12,9 @@ import java.util.function.Function;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.coremaker.ledger.dto.EntryRequest;
-import com.coremaker.ledger.dto.RecordTransactionRequest;
-import com.coremaker.ledger.dto.TransactionResponse;
+import com.coremaker.ledger.dto.request.EntryRequest;
+import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.exception.NotFoundException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;

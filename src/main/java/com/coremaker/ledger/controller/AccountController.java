@@ -11,8 +11,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import com.coremaker.ledger.dto.AccountResponse;
-import com.coremaker.ledger.dto.OpenAccountRequest;
+import com.coremaker.ledger.dto.request.OpenAccountRequest;
+import com.coremaker.ledger.dto.response.AccountResponse;
 import com.coremaker.ledger.service.AccountService;
 
 import jakarta.validation.Valid;

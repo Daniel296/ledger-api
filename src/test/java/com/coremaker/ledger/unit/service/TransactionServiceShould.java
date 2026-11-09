@@ -1,10 +1,10 @@
 package com.coremaker.ledger.unit.service;
 
 import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_NOT_FOUND;
-import static com.coremaker.ledger.model.Currency.EUR;
-import static com.coremaker.ledger.model.Currency.JPY;
-import static com.coremaker.ledger.model.Direction.CREDIT;
-import static com.coremaker.ledger.model.Direction.DEBIT;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.JPY;
+import static com.coremaker.ledger.model.enums.Direction.CREDIT;
+import static com.coremaker.ledger.model.enums.Direction.DEBIT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,16 +22,16 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
-import com.coremaker.ledger.dto.EntryRequest;
-import com.coremaker.ledger.dto.EntryResponse;
-import com.coremaker.ledger.dto.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.EntryRequest;
+import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.response.EntryResponse;
 import com.coremaker.ledger.exception.NotFoundException;
 import com.coremaker.ledger.exception.ValidationException;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
-import com.coremaker.ledger.model.Direction;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
+import com.coremaker.ledger.model.enums.Currency;
+import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
 import com.coremaker.ledger.service.TransactionService;

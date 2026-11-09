@@ -1,8 +1,8 @@
-package com.coremaker.ledger.unit.model;
+package com.coremaker.ledger.unit.model.enums;
 
-import static com.coremaker.ledger.model.Currency.EUR;
-import static com.coremaker.ledger.model.Currency.JPY;
-import static com.coremaker.ledger.model.Currency.USD;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.JPY;
+import static com.coremaker.ledger.model.enums.Currency.USD;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;

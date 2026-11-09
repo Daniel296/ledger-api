@@ -1,6 +1,6 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.repository;
 
-import static com.coremaker.ledger.model.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -13,10 +13,11 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Direction;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
+import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
 

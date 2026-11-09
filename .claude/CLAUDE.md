@@ -31,6 +31,9 @@ service, starts it and runs the tests.
   Rules live in validators (`validation`), which services call before changing anything.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
+- Packages follow the layers, grouped into subfolders: `dto/request` and `dto/response`,
+  `exception/handler`, `model/enums`. Integration tests sit in `integration/api`, `integration/repository`
+  and `integration/concurrency`, with the shared setup in `integration/support`.
 - Constructor injection only, depending on abstractions.
 - Lines are at most 128 characters.
 - Call chains with more than two calls (streams, builders, requests): one call per line, with
@@ -44,7 +47,7 @@ service, starts it and runs the tests.
   block (`}`) that more code follows, and between logical groups of statements.
 - Validators stop at the first broken rule and throw a `ValidationException` (code, message).
 - An API error is `{"errorCode", "message"}`, only for the ledger's own errors (`ErrorCode`), mapped in
-  `exception/ApiExceptionHandler` by exception type. Errors of the HTTP layer (400 malformed request,
+  `exception/handler/ApiExceptionHandler` by exception type. Errors of the HTTP layer (400 malformed request,
   405, 415, 500) are left to Spring Boot's standard handling. Validators never know request field names; the
   message names the value at fault (the amount, the account id).
 - Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the

@@ -1,4 +1,4 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.api;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,6 +10,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
+
+import com.coremaker.ledger.integration.support.IntegrationTest;
 
 @IntegrationTest
 class AccountApiShould {

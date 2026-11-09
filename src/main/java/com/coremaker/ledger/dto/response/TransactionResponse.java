@@ -1,4 +1,4 @@
-package com.coremaker.ledger.dto;
+package com.coremaker.ledger.dto.response;
 
 import java.time.Instant;
 import java.util.List;

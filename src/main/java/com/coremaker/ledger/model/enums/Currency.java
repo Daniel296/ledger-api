@@ -1,4 +1,4 @@
-package com.coremaker.ledger.model;
+package com.coremaker.ledger.model.enums;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;

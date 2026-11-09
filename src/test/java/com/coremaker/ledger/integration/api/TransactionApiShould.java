@@ -1,6 +1,6 @@
-package com.coremaker.ledger.integration;
+package com.coremaker.ledger.integration.api;
 
-import static com.coremaker.ledger.model.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
@@ -15,8 +15,9 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
 import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
+import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
+import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
 

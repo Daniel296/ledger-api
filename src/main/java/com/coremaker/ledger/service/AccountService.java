@@ -10,10 +10,10 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.coremaker.ledger.dto.AccountResponse;
+import com.coremaker.ledger.dto.response.AccountResponse;
 import com.coremaker.ledger.exception.NotFoundException;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
+import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.validation.AccountValidator;
 

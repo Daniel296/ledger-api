@@ -7,8 +7,8 @@ import static com.coremaker.ledger.exception.ErrorCode.TOO_FEW_ENTRIES;
 import static com.coremaker.ledger.exception.ErrorCode.TOO_MANY_DECIMAL_PLACES;
 import static com.coremaker.ledger.exception.ErrorCode.UNBALANCED;
 import static com.coremaker.ledger.exception.ErrorCode.UNKNOWN_ACCOUNT;
-import static com.coremaker.ledger.model.Currency.EUR;
-import static com.coremaker.ledger.model.Currency.JPY;
+import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static com.coremaker.ledger.model.enums.Currency.JPY;
 import static java.util.stream.Collectors.toMap;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -24,10 +24,10 @@ import org.junit.jupiter.api.Test;
 import com.coremaker.ledger.exception.ErrorCode;
 import com.coremaker.ledger.exception.ValidationException;
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
-import com.coremaker.ledger.model.Direction;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
+import com.coremaker.ledger.model.enums.Currency;
+import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.validation.TransactionValidator;
 
 class TransactionValidatorShould {
