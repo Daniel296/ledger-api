@@ -26,10 +26,21 @@ service, starts it and runs the tests.
 
 ## Code
 
+- Models (`model`) are plain data classes with Lombok getters and setters, no business rules.
+  Rules live in validators (`validation`), which services call before changing anything.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Constructor injection only, depending on abstractions.
+- Never build strings with `+`: use `"...%s...".formatted(...)` (and `{}` placeholders in log calls).
 - No Javadoc or doc blocks. Comment only a non-obvious "why", in one short line.
+- Keep code airy: a blank line after a class, enum, method or loop opening line, after every closed
+  block (`}`) that more code follows, and between logical groups of statements.
+- Validators stop at the first broken rule and throw a `ValidationException` (code, message).
+- An API error is `{"errorCode", "message"}`. Validators never know request field names; the
+  message names the value at fault (the amount, the account id).
+- Error codes are a single `ErrorCode` enum in `exception`, used through static imports.
+- An account with no overdraft limit (the settlement accounts) is marked explicitly with
+  `unlimitedOverdraft`; `overdraftLimit` is never null and defaults to zero.
 - Never query inside a loop; never re-read data already loaded.
 
 ## Tests
@@ -40,6 +51,8 @@ service, starts it and runs the tests.
   (plain JUnit, no Spring), integration tests under `com.coremaker.ledger.integration`, annotated
   `@IntegrationTest`.
 - Keep tests as simple as possible; add test helpers only when a test needs them.
+- Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo; Lombok-generated
+  code is excluded through `lombok.config`), with no test that only restates the code.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing
   behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks.
 - Every behaviour change comes with its test in the same change.

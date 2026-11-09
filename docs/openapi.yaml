@@ -12,8 +12,8 @@ info:
       floating point.
     - Every `POST` requires an `Idempotency-Key`. Retrying with the same key and body returns the
       original response; the request takes effect at most once.
-    - Errors are `application/problem+json` (RFC 9457) with a stable `code` and, when the request
-      body is at fault, the JSON pointer of each offending field.
+    - An error is `{"errorCode", "message"}`: a stable code a system can act on, and a message
+      naming the value at fault. Only the first broken rule is reported.
     - The version is in the path. Within `v1` changes are additive only (new endpoints, new
       optional fields, new error codes); clients must ignore fields they do not know.
     - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
@@ -69,6 +69,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Account'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -192,6 +194,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Transaction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -228,9 +232,9 @@ paths:
             reversal (`REVERSAL_NOT_REVERSIBLE`), or a request with this idempotency key is still
             in progress (`IDEMPOTENCY_REQUEST_IN_PROGRESS`).
           content:
-            application/problem+json:
+            application/json:
               schema:
-                $ref: '#/components/schemas/Problem'
+                $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Unprocessable'
 
@@ -242,7 +246,8 @@ components:
       required: true
       description: |
         A unique value the client generates per operation (a UUID is a good choice) and reuses
-        when retrying it. Reusing a key with a different request is refused.
+        when retrying it. Keys are global: a request is the same only if method, path and body all
+        match; reusing a key with a different request is refused.
       schema:
         type: string
         minLength: 1
@@ -280,14 +285,18 @@ components:
   schemas:
     Amount:
       type: string
-      pattern: '^-?[0-9]+(\.[0-9]+)?$'
-      description: An exact decimal amount, as a string.
+      pattern: '^-?[0-9]{1,15}(\.[0-9]{1,4})?$'
+      description: |
+        An exact decimal amount, as a string, with at most 15 integer digits. Responses render it
+        with exactly the decimal places of its currency (`125.50`, `15000`).
       examples:
         - '125.50'
 
     Currency:
       type: string
-      description: An ISO 4217 code. The ledger supports EUR, USD (2 decimals) and JPY (0 decimals).
+      description: |
+        An ISO 4217 code, in upper case. The ledger supports EUR, USD (2 decimals) and JPY
+        (0 decimals).
       examples:
         - EUR
 
@@ -308,7 +317,7 @@ components:
 
     Account:
       type: object
-      required: [id, currency, overdraftLimit, balance, createdAt]
+      required: [id, currency, balance, createdAt]
       properties:
         id:
           type: string
@@ -317,6 +326,7 @@ components:
           $ref: '#/components/schemas/Currency'
         overdraftLimit:
           $ref: '#/components/schemas/Amount'
+          description: Absent when the account has no limit, as the ledger's own settlement accounts.
         balance:
           $ref: '#/components/schemas/Amount'
         createdAt:
@@ -413,89 +423,53 @@ components:
           type: string
           format: date-time
 
-    Problem:
+    Error:
       type: object
-      required: [type, title, status, code]
+      required: [errorCode, message]
       properties:
-        type:
-          type: string
-          format: uri-reference
-        title:
-          type: string
-        status:
-          type: integer
-        detail:
-          type: string
-        instance:
-          type: string
-          format: uri-reference
-        code:
+        errorCode:
           type: string
           description: |
-            A stable, machine-readable reason. New codes may be added within v1:
-            `MALFORMED_REQUEST`, `IDEMPOTENCY_KEY_MISSING`, `ACCOUNT_NOT_FOUND`,
-            `TRANSACTION_NOT_FOUND`, `INVALID_ACCOUNT`, `INVALID_TRANSACTION`,
-            `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`, `IDEMPOTENCY_KEY_REUSED`,
-            `IDEMPOTENCY_REQUEST_IN_PROGRESS`. The reasons behind `INVALID_ACCOUNT` and
-            `INVALID_TRANSACTION` are listed in `errors`.
-        errors:
-          type: array
-          description: The fields at fault, when the request body is the cause.
-          items:
-            $ref: '#/components/schemas/FieldError'
-
-    FieldError:
-      type: object
-      required: [pointer, code, detail]
-      properties:
-        pointer:
-          type: string
-          description: JSON pointer to the field at fault, e.g. `/entries/1/amount`.
-        code:
-          type: string
-          description: |
+            A stable, machine-readable reason. New codes may be added within v1.
+            400: `MALFORMED_REQUEST`, `IDEMPOTENCY_KEY_MISSING`.
+            404: `ACCOUNT_NOT_FOUND`, `TRANSACTION_NOT_FOUND`.
+            409: `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`,
+            `IDEMPOTENCY_REQUEST_IN_PROGRESS`.
+            422: `INVALID_CURRENCY`, `UNSUPPORTED_CURRENCY`, `NEGATIVE_OVERDRAFT_LIMIT`,
             `TOO_FEW_ENTRIES`, `NON_POSITIVE_AMOUNT`, `TOO_MANY_DECIMAL_PLACES`, `UNKNOWN_ACCOUNT`,
-            `CURRENCY_MISMATCH`, `UNBALANCED`, `INVALID_CURRENCY`, `UNSUPPORTED_CURRENCY`,
-            `NEGATIVE_OVERDRAFT_LIMIT`, `OVERDRAFT_LIMIT_EXCEEDED`.
-        detail:
+            `CURRENCY_MISMATCH`, `UNBALANCED`, `OVERDRAFT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`.
+        message:
           type: string
 
   responses:
     BadRequest:
       description: |
         The request is malformed: invalid JSON, a missing field, a missing idempotency key, or an
-        invalid query parameter.
+        invalid path or query parameter.
       content:
-        application/problem+json:
+        application/json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/Error'
     NotFound:
       description: The account or transaction in the path does not exist.
       content:
-        application/problem+json:
+        application/json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/Error'
     IdempotencyConflict:
       description: A request with this idempotency key is still in progress.
       content:
-        application/problem+json:
+        application/json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/Error'
     Unprocessable:
       description: |
         The request is well formed but breaks a ledger rule, or reuses an idempotency key with a
         different request. Nothing was recorded.
       content:
-        application/problem+json:
+        application/json:
           schema:
-            $ref: '#/components/schemas/Problem'
+            $ref: '#/components/schemas/Error'
           example:
-            type: about:blank
-            title: Transaction refused
-            status: 422
-            code: INVALID_TRANSACTION
-            detail: Debits (100.00) and credits (99.00) do not balance.
-            errors:
-              - pointer: /entries
-                code: UNBALANCED
-                detail: Debits total 100.00 but credits total 99.00.
+            errorCode: UNBALANCED
+            message: Debits total 100.00 but credits total 99.00
