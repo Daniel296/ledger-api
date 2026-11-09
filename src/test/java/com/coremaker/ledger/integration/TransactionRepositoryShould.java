@@ -1,5 +1,6 @@
 package com.coremaker.ledger.integration;
 
+import static com.coremaker.ledger.model.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -13,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.coremaker.ledger.model.Account;
-import com.coremaker.ledger.model.Currency;
 import com.coremaker.ledger.model.Direction;
 import com.coremaker.ledger.model.Entry;
 import com.coremaker.ledger.model.Transaction;
@@ -68,7 +68,7 @@ class TransactionRepositoryShould {
     private Account account() {
 
         var account = new Account();
-        account.setCurrency(Currency.EUR);
+        account.setCurrency(EUR);
         account.setCreatedAt(Instant.now());
         return accountRepository.save(account);
     }

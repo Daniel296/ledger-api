@@ -49,7 +49,8 @@ public class TransactionValidator {
         for (var entry : entries) {
 
             if (entry.getAmount().signum() <= 0) {
-                throw new ValidationException(NON_POSITIVE_AMOUNT, "Amount %s must be positive".formatted(entry.getAmount().toPlainString()));
+                throw new ValidationException(NON_POSITIVE_AMOUNT,
+                        "Amount %s must be positive".formatted(entry.getAmount().toPlainString()));
             }
         }
     }
@@ -72,7 +73,8 @@ public class TransactionValidator {
             var entryCurrency = currencyOf(entry, accounts);
             if (entryCurrency != currency) {
                 throw new ValidationException(CURRENCY_MISMATCH,
-                        "Account %s is in %s, the transaction is in %s".formatted(entry.getAccountId(), entryCurrency, currency));
+                        "Account %s is in %s, the transaction is in %s"
+                                .formatted(entry.getAccountId(), entryCurrency, currency));
             }
         }
     }
@@ -84,7 +86,8 @@ public class TransactionValidator {
             var currency = currencyOf(entry, accounts);
             if (!currency.fits(entry.getAmount())) {
                 throw new ValidationException(TOO_MANY_DECIMAL_PLACES,
-                        "Amount %s has more decimal places than %s allows (%d)".formatted(entry.getAmount().toPlainString(), currency, currency.getDecimals()));
+                        "Amount %s has more decimal places than %s allows (%d)"
+                                .formatted(entry.getAmount().toPlainString(), currency, currency.getDecimals()));
             }
         }
     }
