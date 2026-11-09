@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
+import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 @IntegrationTest
 class AccountApiShould {
@@ -19,11 +20,9 @@ class AccountApiShould {
     @Test
     void openAnAccountAndReadItBack() throws Exception {
 
-        var opened = mvc.post().uri("/v1/accounts").contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"currency": "EUR", "overdraftLimit": "100.00"}
-                        """)
-                .exchange();
+        var opened = open("""
+                {"currency": "EUR", "overdraftLimit": "100.00"}
+                """);
 
         assertThat(opened).hasStatus(HttpStatus.CREATED);
         assertThat(opened).bodyJson().extractingPath("$.currency").isEqualTo("EUR");
@@ -31,7 +30,7 @@ class AccountApiShould {
         assertThat(opened).bodyJson().extractingPath("$.balance").isEqualTo("0.00");
 
         var location = opened.getResponse().getHeader("Location");
-        var read = mvc.get().uri(location).exchange();
+        var read = get(location);
 
         assertThat(read).hasStatusOk();
         assertThat(read).bodyJson().isEqualTo(opened.getResponse().getContentAsString());
@@ -42,7 +41,7 @@ class AccountApiShould {
 
         var settlementEur = "ffd6f25c-cbbb-43ae-afe5-1834678bb9aa";
 
-        var read = mvc.get().uri("/v1/accounts/{id}", settlementEur).exchange();
+        var read = get("/v1/accounts/{id}", settlementEur);
 
         assertThat(read).hasStatusOk();
         assertThat(read).bodyJson().doesNotHavePath("$.overdraftLimit");
@@ -51,11 +50,9 @@ class AccountApiShould {
     @Test
     void refuseACurrencyTheLedgerDoesNotSupport() {
 
-        var refused = mvc.post().uri("/v1/accounts").contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"currency": "GBP"}
-                        """)
-                .exchange();
+        var refused = open("""
+                {"currency": "GBP"}
+                """);
 
         assertThat(refused).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
         assertThat(refused).bodyJson().extractingPath("$.errorCode").isEqualTo("UNSUPPORTED_CURRENCY");
@@ -64,7 +61,7 @@ class AccountApiShould {
     @Test
     void reportAnAccountThatDoesNotExist() {
 
-        var read = mvc.get().uri("/v1/accounts/{id}", UUID.randomUUID()).exchange();
+        var read = get("/v1/accounts/{id}", UUID.randomUUID());
 
         assertThat(read).hasStatus(HttpStatus.NOT_FOUND);
         assertThat(read).bodyJson().extractingPath("$.errorCode").isEqualTo("ACCOUNT_NOT_FOUND");
@@ -73,12 +70,28 @@ class AccountApiShould {
     @Test
     void rejectMalformedRequests() {
 
-        var missingCurrency = mvc.post().uri("/v1/accounts").contentType(MediaType.APPLICATION_JSON).content("{}").exchange();
-        var invalidJson = mvc.post().uri("/v1/accounts").contentType(MediaType.APPLICATION_JSON).content("{").exchange();
-        var invalidId = mvc.get().uri("/v1/accounts/not-a-uuid").exchange();
+        var missingCurrency = open("{}");
+        var invalidJson = open("{");
+        var invalidId = get("/v1/accounts/not-a-uuid");
 
         assertThat(missingCurrency).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(invalidJson).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(invalidId).hasStatus(HttpStatus.BAD_REQUEST);
+    }
+
+    private MvcTestResult open(String body) {
+
+        return mvc.post()
+                .uri("/v1/accounts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .exchange();
+    }
+
+    private MvcTestResult get(String uri, Object... variables) {
+
+        return mvc.get()
+                .uri(uri, variables)
+                .exchange();
     }
 }

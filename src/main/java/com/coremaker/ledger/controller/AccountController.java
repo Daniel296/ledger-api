@@ -35,7 +35,11 @@ public class AccountController {
     public ResponseEntity<AccountResponse> open(@Valid @RequestBody OpenAccountRequest request) {
 
         var account = accountService.open(request.currency(), request.overdraftLimit());
-        var location = ServletUriComponentsBuilder.fromCurrentRequest().path("/{id}").buildAndExpand(account.id()).toUri();
+        var location = ServletUriComponentsBuilder
+                .fromCurrentRequest()
+                .path("/{id}")
+                .buildAndExpand(account.id())
+                .toUri();
         return ResponseEntity.created(location).body(account);
     }
 }
