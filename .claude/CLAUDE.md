@@ -34,6 +34,9 @@ service, starts it and runs the tests.
 - Packages follow the layers, grouped into subfolders: `dto/request` and `dto/response`,
   `exception/handler`, `model/enums`. Integration tests sit in `integration/api`, `integration/repository`
   and `integration/concurrency`, with the shared setup in `integration/support`.
+- DTOs are named after the resource in the URL: `<Resource>Request` for what the client sends,
+  `<Resource>Response` for what it gets back (`AccountRequest`, `AccountResponse`). The OpenAPI request
+  schemas carry the same names; response schemas are the bare resource (`Account`).
 - Constructor injection only, depending on abstractions.
 - Lines are at most 128 characters.
 - Call chains with more than two calls (streams, builders, requests): one call per line, with

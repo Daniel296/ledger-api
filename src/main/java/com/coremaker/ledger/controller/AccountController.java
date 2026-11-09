@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import com.coremaker.ledger.dto.request.OpenAccountRequest;
+import com.coremaker.ledger.dto.request.AccountRequest;
 import com.coremaker.ledger.dto.response.AccountResponse;
 import com.coremaker.ledger.service.AccountService;
 
@@ -32,7 +32,7 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<AccountResponse> open(@Valid @RequestBody OpenAccountRequest request) {
+    public ResponseEntity<AccountResponse> open(@Valid @RequestBody AccountRequest request) {
 
         var account = accountService.open(request.currency(), request.overdraftLimit());
         var location = ServletUriComponentsBuilder

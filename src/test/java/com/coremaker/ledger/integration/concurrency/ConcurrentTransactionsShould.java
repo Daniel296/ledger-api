@@ -18,7 +18,7 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import com.coremaker.ledger.dto.request.EntryRequest;
-import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.exception.ValidationException;
 import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
@@ -77,7 +77,7 @@ class ConcurrentTransactionsShould {
         assertThat(balance(second)).isZero();
     }
 
-    private List<Throwable> runAtOnce(int attempts, IntFunction<RecordTransactionRequest> request) throws Exception {
+    private List<Throwable> runAtOnce(int attempts, IntFunction<TransactionRequest> request) throws Exception {
 
         var start = new CountDownLatch(1);
         var executor = Executors.newFixedThreadPool(attempts);
@@ -108,7 +108,7 @@ class ConcurrentTransactionsShould {
         }
     }
 
-    private Throwable post(RecordTransactionRequest transfer) {
+    private Throwable post(TransactionRequest transfer) {
 
         try {
             transactionService.post(transfer);
@@ -134,10 +134,10 @@ class ConcurrentTransactionsShould {
         return accountRepository.save(account);
     }
 
-    private static RecordTransactionRequest transfer(Account from, Account to, String amount) {
+    private static TransactionRequest transfer(Account from, Account to, String amount) {
 
         var debit = new EntryRequest(from.getId(), DEBIT, new BigDecimal(amount));
         var credit = new EntryRequest(to.getId(), CREDIT, new BigDecimal(amount));
-        return new RecordTransactionRequest("Transfer", List.of(debit, credit));
+        return new TransactionRequest("Transfer", List.of(debit, credit));
     }
 }

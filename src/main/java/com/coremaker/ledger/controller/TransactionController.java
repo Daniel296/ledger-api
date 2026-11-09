@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.service.TransactionService;
 
@@ -32,7 +32,7 @@ public class TransactionController {
     }
 
     @PostMapping
-    public ResponseEntity<TransactionResponse> post(@Valid @RequestBody RecordTransactionRequest request) {
+    public ResponseEntity<TransactionResponse> post(@Valid @RequestBody TransactionRequest request) {
 
         var transaction = transactionService.post(request);
         var location = ServletUriComponentsBuilder

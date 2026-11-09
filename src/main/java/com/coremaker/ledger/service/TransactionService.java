@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.coremaker.ledger.dto.request.EntryRequest;
-import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.exception.NotFoundException;
 import com.coremaker.ledger.model.Account;
@@ -42,7 +42,7 @@ public class TransactionService {
     }
 
     @Transactional
-    public TransactionResponse post(RecordTransactionRequest request) {
+    public TransactionResponse post(TransactionRequest request) {
 
         var transaction = new Transaction();
         transaction.setDescription(request.description());

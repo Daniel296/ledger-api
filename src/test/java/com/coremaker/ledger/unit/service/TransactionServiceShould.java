@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import com.coremaker.ledger.dto.request.EntryRequest;
-import com.coremaker.ledger.dto.request.RecordTransactionRequest;
+import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.EntryResponse;
 import com.coremaker.ledger.exception.NotFoundException;
 import com.coremaker.ledger.exception.ValidationException;
@@ -148,9 +148,9 @@ class TransactionServiceShould {
         return account;
     }
 
-    private static RecordTransactionRequest request(EntryRequest... entries) {
+    private static TransactionRequest request(EntryRequest... entries) {
 
-        return new RecordTransactionRequest("Payout", List.of(entries));
+        return new TransactionRequest("Payout", List.of(entries));
     }
 
     private static EntryRequest entry(Account account, Direction direction, String amount) {

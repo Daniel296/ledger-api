@@ -37,7 +37,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OpenAccountRequest'
+              $ref: '#/components/schemas/AccountRequest'
             example:
               currency: EUR
       responses:
@@ -152,7 +152,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RecordTransactionRequest'
+              $ref: '#/components/schemas/TransactionRequest'
             example:
               description: Payout to Merchant 42
               entries:
@@ -307,7 +307,7 @@ components:
       enum: [DEBIT, CREDIT]
       description: A credit increases the account's balance, a debit decreases it.
 
-    OpenAccountRequest:
+    AccountRequest:
       type: object
       required: [currency]
       properties:
@@ -335,7 +335,7 @@ components:
           type: string
           format: date-time
 
-    RecordTransactionRequest:
+    TransactionRequest:
       type: object
       required: [description, entries]
       properties:
