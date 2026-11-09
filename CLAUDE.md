@@ -66,7 +66,9 @@ service, starts it and runs the tests.
 
 ## Workflow
 
-- Work is split into merge requests of fewer than 20 files, except the project skeleton and the
-  Docker / test infrastructure.
+- Every step follows [the implement-step skill](.claude/skills/implement-step/SKILL.md) and ends with an
+  independent review by the `ledger-reviewer` agent.
+- Work is split into commits of at most 20 files, except the project skeleton and the
+  Docker / test infrastructure. The developer makes every commit.
 - The API contract (OpenAPI) is written before the code and kept in step with it.
 - Commit messages are short, in the imperative mood, and carry no AI attribution.
