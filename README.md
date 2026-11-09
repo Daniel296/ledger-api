@@ -62,6 +62,14 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
   or reveal volumes. Entries are internal and keep an auto-increment id (which also means Hibernate
   inserts them one by one, without JDBC batching).
 - Transactions and entries are `@Immutable`: Hibernate never issues an `UPDATE` for them.
+- Recording a transaction locks its accounts (`SELECT … FOR UPDATE`, always in id order) until the
+  database transaction commits: the rules are checked against balances nobody else can change, and
+  two transactions on the same accounts in opposite directions cannot deadlock.
+- A transaction keeps its currency (all its entries share one), so it can be shown without reading
+  its accounts.
+- Each entry keeps the balance of its account right after it, in the order of the request. An account
+  posted to twice in one transaction may show an intermediate value below its limit; the overdraft
+  rule is judged on the account's net change, since the transaction is applied all at once.
 - The ledger's own settlement accounts are created by the migration, with no overdraft limit and
   fixed random ids: EUR `ffd6f25c-cbbb-43ae-afe5-1834678bb9aa`, USD
   `91509bf3-2df9-43f8-89e3-2283c7f5a97d`, JPY `7bba09b3-74f5-4fbd-9315-25c9c98e4f94`. The PDF names

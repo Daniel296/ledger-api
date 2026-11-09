@@ -85,14 +85,13 @@ class TransactionValidatorShould {
     @Test
     void refuseTakingAnAccountPastItsOverdraftLimit() {
 
-        // Merchant 42 after examples 1 and 2 of the challenge
-        var merchant = account(EUR, "0", "25.50");
+        var merchant42 = account(EUR, "0", "25.50");
         var payouts = account(EUR, "0", "98.50");
 
-        assertThatThrownBy(() -> validate(List.of(merchant, payouts), debit(merchant, "50.00"), credit(payouts, "50.00")))
+        assertThatThrownBy(() -> validate(List.of(merchant42, payouts), debit(merchant42, "50.00"), credit(payouts, "50.00")))
                 .isInstanceOfSatisfying(ValidationException.class,
                         refusal -> assertThat(refusal.getCode()).isEqualTo(OVERDRAFT_LIMIT_EXCEEDED))
-                .hasMessage("Account %s would go to -24.50, past its overdraft limit of 0", merchant.getId());
+                .hasMessage("Account %s would go to -24.50, past its overdraft limit of 0.00", merchant42.getId());
     }
 
     @Test
@@ -144,7 +143,9 @@ class TransactionValidatorShould {
 
         var transaction = new Transaction();
         transaction.setEntries(List.of(entries));
-        validator.validate(transaction, accounts.stream().collect(toMap(Account::getId, Function.identity())));
+        var accountsById = accounts.stream()
+                .collect(toMap(Account::getId, Function.identity()));
+        validator.validate(transaction, accountsById);
     }
 
     private void assertAccepted(List<Account> accounts, Entry... entries) {

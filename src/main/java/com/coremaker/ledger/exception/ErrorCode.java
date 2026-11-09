@@ -3,6 +3,7 @@ package com.coremaker.ledger.exception;
 public enum ErrorCode {
 
     ACCOUNT_NOT_FOUND,
+    TRANSACTION_NOT_FOUND,
     INVALID_CURRENCY,
     UNSUPPORTED_CURRENCY,
     NEGATIVE_OVERDRAFT_LIMIT,

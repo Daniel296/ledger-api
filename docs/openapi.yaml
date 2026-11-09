@@ -345,6 +345,7 @@ components:
           maxLength: 255
         entries:
           type: array
+          maxItems: 100
           items:
             $ref: '#/components/schemas/Entry'
 

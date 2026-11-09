@@ -76,6 +76,7 @@ class TransactionRepositoryShould {
     private static Transaction transaction(Entry... entries) {
 
         var transaction = new Transaction();
+        transaction.setCurrency(EUR);
         transaction.setDescription("Payment settled");
         transaction.setRecordedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         transaction.setEntries(List.of(entries));

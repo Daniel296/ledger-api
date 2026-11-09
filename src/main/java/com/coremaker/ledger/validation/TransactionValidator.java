@@ -111,12 +111,13 @@ public class TransactionValidator {
             if (!account.isUnlimitedOverdraft() && balanceAfter.compareTo(account.getOverdraftLimit().negate()) < 0) {
                 throw new ValidationException(OVERDRAFT_LIMIT_EXCEEDED,
                         "Account %s would go to %s, past its overdraft limit of %s".formatted(
-                                account.getId(), balanceAfter.toPlainString(), account.getOverdraftLimit().toPlainString()));
+                                account.getId(),
+                                account.getCurrency().format(balanceAfter),
+                                account.getCurrency().format(account.getOverdraftLimit())));
             }
         }
     }
 
-    // All the transaction's entries on the account count, so an account posted to twice is judged on the sum
     private BigDecimal netChange(Account account, List<Entry> entries) {
 
         return entries.stream()
