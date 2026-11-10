@@ -27,6 +27,8 @@ info:
     - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
       returns it on the response, writes it in its logs and in the announcements the request
       causes, so one request can be followed end to end.
+    - Every recorded transaction, reversals included, is announced on Kafka as a
+      `transaction-recorded` message; its contract is docs/asyncapi.yaml.
 servers:
   - url: http://localhost:8080
 
@@ -372,13 +374,19 @@ components:
 
     Transaction:
       type: object
-      required: [id, description, entries, recordedAt]
+      description: |
+        A recorded transaction. It is also the payload of the `transaction-recorded` message every
+        recorded transaction is announced with (docs/asyncapi.yaml).
+      required: [id, description, currency, entries, recordedAt]
       properties:
         id:
           type: string
           format: uuid
         description:
           type: string
+        currency:
+          $ref: '#/components/schemas/Currency'
+          description: The currency of all its entries.
         entries:
           type: array
           items:

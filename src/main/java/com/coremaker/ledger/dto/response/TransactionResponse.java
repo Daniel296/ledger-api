@@ -5,11 +5,12 @@ import java.util.List;
 import java.util.UUID;
 
 import com.coremaker.ledger.model.Transaction;
+import com.coremaker.ledger.model.enums.Currency;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record TransactionResponse(
-        UUID id, String description, List<EntryResponse> entries, Instant recordedAt, UUID reversalOf) {
+        UUID id, String description, Currency currency, List<EntryResponse> entries, Instant recordedAt, UUID reversalOf) {
 
     public static TransactionResponse from(Transaction transaction) {
 
@@ -20,6 +21,7 @@ public record TransactionResponse(
         return new TransactionResponse(
                 transaction.getId(),
                 transaction.getDescription(),
+                transaction.getCurrency(),
                 entries,
                 transaction.getRecordedAt(),
                 transaction.getReversalOf());
