@@ -1,11 +1,37 @@
 asyncapi: 3.0.0
 info:
-  title: Ledger announcements
+  title: Ledger messages
   version: 1.0.0
   description: |
-    The messages the ledger publishes on Kafka. Every recorded transaction, reversals included, is
-    announced after it is committed, as the same `Transaction` the REST API returns for
-    `GET /v1/transactions/{transactionId}` (docs/openapi.yaml).
+    The messages the ledger consumes and publishes on Kafka.
+
+    ## payment-settled (consumed)
+
+    The payment system announces every settled payment. The ledger records each one as a transaction
+    that debits the settlement account of the payment's currency and credits the merchant's account,
+    described as `Payment <paymentId> settled`, and announces it on `transaction-recorded` like any
+    other transaction.
+    - Each payment is recorded once, however many times it arrives and under whatever event id: the
+      ledger deduplicates on `paymentId` (as the idempotency key `payment-settled:<paymentId>`), on
+      every instance. The event id is not used.
+    - A copy with the same `paymentId` and the same merchant, amount and currency is recognized and
+      ignored; one with a different merchant, amount or currency is not recorded and is dead-lettered
+      with `IDEMPOTENCY_KEY_REUSED`.
+    - The offset is committed after the payment is recorded, so a ledger instance that crashes in
+      between gets the message again, and recognizes it.
+    - A message the ledger cannot record (malformed, an unknown account, the wrong currency) is
+      published unchanged to `payment-settled-dlt`, with the reason in its headers, and the messages
+      behind it go on. A payment for an account that is not open yet can be sent again, with the same
+      `paymentId`, once the account is open: a refusal is not remembered.
+    - Any other failure (the database unavailable, an account locked for too long) is retried, with a
+      back-off growing from 2 to 30 seconds, until it succeeds; the messages behind it on the same
+      partition wait. Such a message is never dead-lettered.
+    - Unknown fields are ignored.
+
+    ## transaction-recorded (published)
+
+    Every recorded transaction, reversals included, is announced after it is committed, as the same
+    `Transaction` the REST API returns for `GET /v1/transactions/{transactionId}` (docs/openapi.yaml).
 
     What a consumer can rely on:
     - Nothing is missed. The message is written to an outbox table in the database transaction that
@@ -34,6 +60,30 @@ servers:
     description: The broker docker-compose.yml starts, inside its network.
 
 channels:
+  paymentSettled:
+    address: payment-settled
+    description: One message for every payment the payment system settled.
+    messages:
+      paymentSettled:
+        $ref: '#/components/messages/PaymentSettled'
+    bindings:
+      kafka:
+        partitions: 2
+        bindingVersion: 0.5.0
+
+  paymentSettledDeadLetter:
+    address: payment-settled-dlt
+    description: |
+      The payment-settled messages the ledger could not record, each on the partition it had on
+      `payment-settled`.
+    messages:
+      paymentSettledDeadLetter:
+        $ref: '#/components/messages/PaymentSettledDeadLetter'
+    bindings:
+      kafka:
+        partitions: 2
+        bindingVersion: 0.5.0
+
   transactionRecorded:
     address: transaction-recorded
     description: One message for every recorded transaction or reversal.
@@ -46,6 +96,22 @@ channels:
         bindingVersion: 0.5.0
 
 operations:
+  recordPaymentSettled:
+    action: receive
+    summary: Record a settled payment
+    channel:
+      $ref: '#/channels/paymentSettled'
+    messages:
+      - $ref: '#/channels/paymentSettled/messages/paymentSettled'
+
+  deadLetterPaymentSettled:
+    action: send
+    summary: Set aside a payment-settled message the ledger could not record
+    channel:
+      $ref: '#/channels/paymentSettledDeadLetter'
+    messages:
+      - $ref: '#/channels/paymentSettledDeadLetter/messages/paymentSettledDeadLetter'
+
   announceTransactionRecorded:
     action: send
     summary: Announce a recorded transaction
@@ -55,7 +121,96 @@ operations:
       - $ref: '#/channels/transactionRecorded/messages/transactionRecorded'
 
 components:
+  schemas:
+    PaymentSettled:
+      type: object
+      required: [eventId, paymentId, merchantAccountId, amount, currency]
+      properties:
+        eventId:
+          type: string
+          format: uuid
+          description: Identifies this message. The ledger does not use it.
+        paymentId:
+          type: string
+          minLength: 1
+          maxLength: 200
+          description: Identifies the payment; the ledger records each payment id once.
+        merchantAccountId:
+          type: string
+          format: uuid
+          description: The merchant's account, credited with the amount. It must be in the payment's currency.
+        amount:
+          description: Positive, with no more decimal places than the currency allows.
+          allOf:
+            - $ref: './openapi.yaml#/components/schemas/Amount'
+        currency:
+          type: string
+          enum: [EUR, USD, JPY]
+
   messages:
+    PaymentSettled:
+      name: payment-settled
+      title: Payment settled
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/PaymentSettled'
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: The payment id, so copies of one payment share a partition. The ledger does not rely on it.
+          bindingVersion: 0.5.0
+      examples:
+        - name: payment
+          summary: A payment of 125.50 EUR settles for Merchant 42
+          payload:
+            eventId: 6b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+            paymentId: pay-20261110-0042
+            merchantAccountId: 0b5e3a52-6d1c-4f0e-9a43-7c1f4f2d8a10
+            amount: '125.50'
+            currency: EUR
+
+    PaymentSettledDeadLetter:
+      name: payment-settled-dead-letter
+      title: Payment settled, not recorded
+      description: |
+        The payment-settled message exactly as it arrived (same key, same value, which may not even be
+        JSON), so it can be sent again unchanged. Spring Kafka also adds its `kafka_dlt-original-*` headers:
+        the topic, partition, offset, timestamp and timestamp type the message had (the numbers as big-endian
+        binary), and the consumer group.
+      headers:
+        type: object
+        required: [errorCode, errorMessage]
+        properties:
+          errorCode:
+            type: string
+            enum:
+              - MALFORMED_MESSAGE
+              - UNKNOWN_ACCOUNT
+              - CURRENCY_MISMATCH
+              - NON_POSITIVE_AMOUNT
+              - TOO_MANY_DECIMAL_PLACES
+              - IDEMPOTENCY_KEY_REUSED
+            description: |
+              `MALFORMED_MESSAGE`: not JSON, a missing field, or a value of the wrong format (an unsupported
+              currency included). The other codes are the ledger's own refusals, as in the REST API.
+          errorMessage:
+            type: string
+            description: Names the value at fault.
+      payload: {}
+      examples:
+        - name: unknownAccount
+          summary: A payment for an account the ledger does not know
+          headers:
+            errorCode: UNKNOWN_ACCOUNT
+            errorMessage: Account 0b5e3a52-6d1c-4f0e-9a43-7c1f4f2d8a10 does not exist
+          payload:
+            eventId: 6b1f2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d
+            paymentId: pay-20261110-0042
+            merchantAccountId: 0b5e3a52-6d1c-4f0e-9a43-7c1f4f2d8a10
+            amount: '125.50'
+            currency: EUR
+
     TransactionRecorded:
       name: transaction-recorded
       title: Transaction recorded
