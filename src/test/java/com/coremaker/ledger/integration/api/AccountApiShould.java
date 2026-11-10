@@ -1,5 +1,6 @@
 package com.coremaker.ledger.integration.api;
 
+import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
@@ -69,7 +70,7 @@ class AccountApiShould {
     @Test
     void showASettlementAccountWithoutAnOverdraftLimit() {
 
-        var settlementEur = "ffd6f25c-cbbb-43ae-afe5-1834678bb9aa";
+        var settlementEur = accountRepository.findSettlementAccountId(EUR).orElseThrow();
 
         var read = get("/v1/accounts/{id}", settlementEur);
 

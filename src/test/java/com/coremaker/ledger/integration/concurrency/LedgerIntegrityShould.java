@@ -53,8 +53,8 @@ class LedgerIntegrityShould {
     @RepeatedTest(5)
     void keepEveryCurrencyAtZeroWhileTransactionsAndReversalsRaceOnTwoInstances() throws Exception {
 
-        var settlementEur = UUID.fromString("ffd6f25c-cbbb-43ae-afe5-1834678bb9aa");
-        var settlementJpy = UUID.fromString("7bba09b3-74f5-4fbd-9315-25c9c98e4f94");
+        var settlementEur = accountRepository.findSettlementAccountId(EUR).orElseThrow();
+        var settlementJpy = accountRepository.findSettlementAccountId(JPY).orElseThrow();
         var eur = merchants(EUR);
         var jpy = merchants(JPY);
         var recorded = new CopyOnWriteArrayList<UUID>();

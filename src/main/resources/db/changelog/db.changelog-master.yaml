@@ -11,3 +11,5 @@ databaseChangeLog:
       file: db/changelog/changes/005-create-idempotent-requests.sql
   - include:
       file: db/changelog/changes/006-create-outbox.sql
+  - include:
+      file: db/changelog/changes/007-index-settlement-accounts.sql

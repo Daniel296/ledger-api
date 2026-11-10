@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.UUID;
+import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -25,20 +25,20 @@ class AccountRepositoryShould {
     private AccountRepository accountRepository;
 
     @Test
-    void findTheSettlementAccountsTheMigrationCreates() {
+    void findTheOneSettlementAccountTheMigrationCreatesForEachCurrencyAndNoOtherAccount() {
 
-        assertSettlementAccount("ffd6f25c-cbbb-43ae-afe5-1834678bb9aa", EUR);
-        assertSettlementAccount("91509bf3-2df9-43f8-89e3-2283c7f5a97d", USD);
-        assertSettlementAccount("7bba09b3-74f5-4fbd-9315-25c9c98e4f94", JPY);
+        var withALimit = accountRepository.save(account(EUR));
+
+        assertSettlementAccount(EUR);
+        assertSettlementAccount(USD);
+        assertSettlementAccount(JPY);
+        assertThat(accountRepository.findSettlementAccountId(EUR)).isNotEqualTo(Optional.of(withALimit.getId()));
     }
 
     @Test
     void saveAnAccountAndReadItBack() {
 
-        var account = new Account();
-        account.setCurrency(EUR);
-        account.setOverdraftLimit(new BigDecimal("100.00"));
-        account.setCreatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
+        var account = account(EUR);
 
         var saved = accountRepository.save(account);
         var found = accountRepository.findById(saved.getId()).orElseThrow();
@@ -50,11 +50,21 @@ class AccountRepositoryShould {
         assertThat(found.getCreatedAt()).isEqualTo(account.getCreatedAt());
     }
 
-    private void assertSettlementAccount(String id, Currency currency) {
+    private void assertSettlementAccount(Currency currency) {
 
-        var account = accountRepository.findById(UUID.fromString(id)).orElseThrow();
+        var id = accountRepository.findSettlementAccountId(currency).orElseThrow();
+        var account = accountRepository.findById(id).orElseThrow();
 
         assertThat(account.getCurrency()).isEqualTo(currency);
         assertThat(account.isUnlimitedOverdraft()).isTrue();
+    }
+
+    private static Account account(Currency currency) {
+
+        var account = new Account();
+        account.setCurrency(currency);
+        account.setOverdraftLimit(new BigDecimal("100.00"));
+        account.setCreatedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
+        return account;
     }
 }
