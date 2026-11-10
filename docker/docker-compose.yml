@@ -1,3 +1,5 @@
+name: ledger-api
+
 services:
   mysql:
     image: mysql:8.4
@@ -34,7 +36,9 @@ services:
       retries: 30
 
   ledger-api:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     environment:
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ledger
       SPRING_DATASOURCE_USERNAME: ledger

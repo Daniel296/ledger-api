@@ -92,8 +92,8 @@ service, starts it and runs the tests.
   (`account(...)`, `debit(...)`); only the class under test and its mocks are fields.
 - Integration tests check every response against `docs/openapi.yaml` (`OpenApiContractConfiguration`), and every
   `transaction-recorded` message they read against its payload schema (`Announcements`).
-- Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo; Lombok-generated
-  code is excluded through `lombok.config`), with no test that only restates the code.
+- Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo skips Lombok-generated code,
+  which Lombok marks `@Generated`), with no test that only restates the code.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing
   behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks. Several instances are
   proven with `SecondInstance`, a second application context on the same MySQL and Kafka.

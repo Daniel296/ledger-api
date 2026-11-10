@@ -9,15 +9,19 @@ if [ $# -lt 3 ] || [ $# -gt 4 ]; then
     exit 1
 fi
 
+kafka() {
+    docker compose -f docker/docker-compose.yml exec -T kafka "$@"
+}
+
 new_id() {
-    docker compose exec -T kafka cat /proc/sys/kernel/random/uuid
+    kafka cat /proc/sys/kernel/random/uuid
 }
 
 payment_id=${4:-$(new_id)}
 message=$(printf '{"eventId": "%s", "paymentId": "%s", "merchantAccountId": "%s", "amount": "%s", "currency": "%s"}' \
     "$(new_id)" "$payment_id" "$1" "$2" "$3")
 
-printf '%s\t%s\n' "$payment_id" "$message" | docker compose exec -T kafka /opt/kafka/bin/kafka-console-producer.sh \
+printf '%s\t%s\n' "$payment_id" "$message" | kafka /opt/kafka/bin/kafka-console-producer.sh \
     --bootstrap-server localhost:9092 --topic payment-settled \
     --reader-property parse.key=true --reader-property "key.separator=$(printf '\t')"
 

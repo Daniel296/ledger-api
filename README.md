@@ -23,7 +23,7 @@ The tests start their own MySQL and Kafka (Testcontainers), so they never touch 
 - API: `http://localhost:8080` (health: `/actuator/health`). Contract: [docs/openapi.yaml](docs/openapi.yaml).
 - Kafka messages: [docs/asyncapi.yaml](docs/asyncapi.yaml). From the host, Kafka is `localhost:9094`.
 - MySQL: `localhost:3308`, database, user and password `ledger`.
-- Stop everything: `docker compose down -v` (`-v` also deletes the data).
+- Stop everything: `docker compose -f docker/docker-compose.yml down -v` (`-v` also deletes the data).
 
 ## Examples
 
@@ -135,12 +135,12 @@ Ctrl-C.
 
 ```bash
 ./scripts/send-payment-settled.sh 00000000-0000-0000-0000-000000000000 10.00 EUR
-docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
-    --topic payment-settled-dlt --from-beginning --formatter-property print.headers=true
+docker compose -f docker/docker-compose.yml exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server localhost:9092 --topic payment-settled-dlt --from-beginning --formatter-property print.headers=true
 # errorCode:UNKNOWN_ACCOUNT,errorMessage:Account 00000000-0000-0000-0000-000000000000 does not exist,… {"eventId":…}
 
-docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
-    --topic transaction-recorded --from-beginning --formatter-property print.key=true \
+docker compose -f docker/docker-compose.yml exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
+    --bootstrap-server localhost:9092 --topic transaction-recorded --from-beginning --formatter-property print.key=true \
     --formatter-property print.headers=true
 # correlationId:pay-42     571f8335-…  {"id":"571f8335-…","description":"Payment pay-42 settled",…}
 # correlationId:payout-42  199b4524-…  {"id":"199b4524-…","description":"Payout to Merchant 42",…}
