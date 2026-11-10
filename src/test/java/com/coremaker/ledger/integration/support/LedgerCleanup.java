@@ -15,6 +15,8 @@ class LedgerCleanup implements BeforeEachCallback {
 
     private static final List<String> EMPTY_THE_LEDGER = List.of(
             "SET FOREIGN_KEY_CHECKS = 0",
+            "SELECT id FROM outbox_publisher FOR UPDATE",
+            "DELETE FROM outbox",
             "DELETE FROM idempotent_requests",
             "DELETE FROM entries",
             "DELETE FROM transactions",
@@ -31,12 +33,14 @@ class LedgerCleanup implements BeforeEachCallback {
 
         try (var connection = dataSource.getConnection(); var statement = connection.createStatement()) {
 
+            connection.setAutoCommit(false);
             for (var sql : EMPTY_THE_LEDGER) {
 
                 statement.execute(sql);
             }
 
             ScriptUtils.executeSqlScript(connection, SETTLEMENT_ACCOUNTS);
+            connection.commit();
         }
     }
 }

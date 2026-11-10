@@ -17,12 +17,23 @@ Requires Docker, Git and a JDK 17+ (on the `PATH` or in `JAVA_HOME`).
 ./run.sh
 ```
 
-The script builds the service image, starts it with MySQL through Docker Compose, waits until it
-is healthy, then runs the test suite. The tests start their own MySQL through Testcontainers, so
-they never touch the running service's data.
+The script builds the service image, starts it with MySQL and Kafka through Docker Compose, waits
+until it is healthy, then runs the test suite. The tests start their own MySQL and Kafka through
+Testcontainers, so they never touch the running service's data.
 
-The service listens on `http://localhost:8080`; `GET /actuator/health` reports its status.
+The service listens on `http://localhost:8080`; `GET /actuator/health` reports its status. Its MySQL is
+reachable from the host at `jdbc:mysql://localhost:3308/ledger` (user `ledger`, password `ledger`), for a
+database client; 3308 avoids clashing with a local MySQL on 3306. Kafka is reachable from the host at
+`localhost:9094`, for a Kafka client: a second listener, since the service and the other containers use
+`kafka:9092`, a name that exists only inside the Docker network.
 Stop everything with `docker compose down` (add `-v` to also drop the database volume).
+
+To watch the announcements of the running service:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+    --topic transaction-recorded --from-beginning --formatter-property print.key=true
+```
 
 ## API
 
@@ -92,6 +103,72 @@ A client that gets no answer can send the same `POST` again with the same `Idemp
   accounts) are locking reads, and a reversal needs it to see a reversal committed while it waited.
 - Keys are kept for at least 24 hours, as the contract promises; for now they are never purged.
 
+## Announcements
+
+Every recorded transaction, reversals included, is announced on the Kafka topic `transaction-recorded`,
+as the same JSON the API returns for it. The message contract is [docs/asyncapi.yaml](docs/asyncapi.yaml):
+its payload is the `Transaction` schema of the OpenAPI contract, and every message an integration test
+reads is checked against it.
+
+Two flows, each in its own database transaction. Recording a transaction (or a reversal) writes its
+message to the outbox:
+
+```
+POST /v1/transactions
+└─ TransactionService.post
+   └─ IdempotencyService.commitOnce              one READ COMMITTED transaction ◄── starts here
+      ├─ lock the idempotency key                SELECT … FOR UPDATE
+      ├─ TransactionService.apply
+      │   ├─ lock the accounts, check the rules  SELECT … FOR UPDATE, in id order
+      │   ├─ save the transaction                INSERT transactions, entries; UPDATE accounts
+      │   └─ OutboxService.add                   INSERT outbox  (joins the transaction, never opens one)
+      ├─ keep the response on the key            UPDATE idempotent_requests
+      └─ commit ◄── balances, transaction, entries and message: all of them, or none
+```
+
+and the relay, which knows nothing about requests, publishes it:
+
+```
+every 200 ms, on every instance: OutboxRelay.publishPending, in its own READ COMMITTED transaction
+├─ lock the one outbox_publisher row     SELECT … FOR UPDATE SKIP LOCKED; locked elsewhere → stop
+├─ read up to 100 unpublished messages   SELECT … WHERE published_at IS NULL ORDER BY id
+├─ send each to Kafka                    wait for its acknowledgement before sending the next
+├─ mark them published                   UPDATE outbox SET published_at = now WHERE id IN (…)
+└─ commit, which releases the lock ◄── any failure rolls back, and the batch is sent again later
+```
+
+- **Transactional outbox.** The message is written in the transaction that records the transaction, so
+  both are committed or neither is. Kafka is never called inside that transaction: recording does not wait
+  for Kafka, and keeps working while it is down.
+- **A relay publishes the outbox.** Every instance runs it every 200 ms. A run starts by locking the one
+  row of `outbox_publisher` with `SELECT … FOR UPDATE SKIP LOCKED`; when another instance holds it, the
+  run does nothing. The holder reads up to 100 messages not published yet, publishes them one by one in
+  the order of their outbox id, waiting for Kafka's acknowledgement of each before sending the next, then
+  marks them published and commits. A message is picked by its `published_at` flag, not as "after the
+  last id published": ids are taken at insert, not at commit, so a later id can commit first and would
+  be skipped. A send that fails, or is not taken and acknowledged within 5 seconds each, rolls the run
+  back, and the batch is sent again by a later run. When the publishing instance dies, MySQL releases its
+  lock with its connection and another instance takes over. An instance that hangs without dying, cut off
+  from MySQL while its connection stays open, keeps the lock, and nobody publishes until MySQL drops that
+  connection; a lease that expires would fix it (see Improvements).
+- **Why one publisher and one partition.** Transactions that share an account are applied one after the
+  other (they lock the account), and each inserts its message while it holds that lock, so their outbox
+  ids follow the order they were applied in. A reversal is recorded only after its original was
+  committed. Publishing in outbox id order, from one instance at a time, to a topic with one partition
+  hands consumers that same order; two publishers at once, or several partitions, would interleave it.
+  The price is throughput: one partition is read by one consumer of a group, and the relay publishes about
+  600 messages a second (1,000 in 1.6 s, measured locally). Since it sends one message at a time, the
+  producer does not wait to fill a batch (`linger.ms: 0`; with Kafka's default of 5 ms it was 170 a second).
+
+What a consumer can rely on:
+
+| | |
+|---|---|
+| **Can it miss a transaction?** | No. A committed transaction always has its message in the outbox, and the message stays there until Kafka has acknowledged it. A refused transaction is never announced. |
+| **Can it see one twice?** | Yes, rarely: a relay that dies, or fails, after Kafka acknowledged a message but before it marked it published sends it again. The copy is identical (same key and body), so consumers deduplicate on the transaction id, which is also the message key. |
+| **In what order?** | Two transactions that touch the same account arrive in the order they were applied to it, and a reversal always arrives after the transaction it reverses. Transactions with no account in common may arrive in either order. A copy always repeats a message that already arrived, so once copies are dropped the order still holds. |
+| **What if the service crashes right after recording one?** | The transaction and its message were committed together, so the message waits in the outbox; any other instance (or the same one once restarted) publishes it within a relay run. If Kafka is down, messages wait in the outbox and are published, in order, once it is back. |
+
 ## Persistence decisions
 
 - The schema is owned by Liquibase changelogs written as formatted SQL, so the constraints the
@@ -133,11 +210,14 @@ race between requests runs five times:
 | Every currency adds up to zero and every balance equals the sum of its entries: checked again and again while 200 transactions and reversals race on two instances, and once more at the end | `LedgerIntegrityShould` |
 | A request sent again with the same `Idempotency-Key` takes effect once: copies sent at once, to one instance or to both, and a first attempt that dies before its commit | `ConcurrentRetriesShould`, `ConcurrentTransactionsShould`, `IdempotencyServiceShould` |
 | A request kept waiting on a locked account is answered `503` after 5 seconds and records nothing, while requests on other accounts are still served | `BusyAccountShould` |
-| A refused transaction leaves nothing behind | `TransactionApiShould` |
+| A refused transaction leaves nothing behind, and is not announced | `TransactionApiShould`, `TransactionAnnouncementsShould` |
+| Every transaction is announced, once and in the order it was applied, when both instances record transactions and reversals and both run the relay | `ConcurrentAnnouncementsShould` |
+| A committed transaction is announced even when Kafka is down while it is recorded, or the instance publishing the outbox dies first; a publisher that dies after sending sends an identical copy | `OutboxRelayShould` |
 
 - **Two instances in the tests**: the second instance is a second Spring Boot application started
-  in the same JVM, with its own connection pool and its own Hibernate, connected to the same MySQL.
-  Like two containers, the two instances share only the database.
+  in the same JVM, with its own connection pool, its own Hibernate and its own outbox relay, connected
+  to the same MySQL and Kafka. Like two containers, the two instances share only the database and the
+  broker.
 - **Lock waits**: MySQL waits 50 seconds for a row lock by default; the ledger sets 5
   (`innodb_lock_wait_timeout`, on every connection). A request that waits longer, or that MySQL
   picks as the victim of a deadlock (none is expected: a transaction locks all its accounts in one
@@ -160,6 +240,8 @@ race between requests runs five times:
   recorded).
 - **Isolated tests**: before each integration test, `@IntegrationTest` empties the ledger and runs the
   settlement accounts' migration again, so the checks over the whole ledger see only the test's own data.
+  It first takes the outbox publisher's lock, so a relay run still publishing the previous test's
+  messages finishes before the outbox is emptied, and a test reads only the announcements it caused.
 
 This README is completed as the service is built (API, design decisions, guarantees for consumers,
 improvements).
@@ -167,3 +249,24 @@ improvements).
 ## AI usage
 
 See [AI_USAGE.md](AI_USAGE.md).
+
+## Improvements
+
+- **More partitions, for more consumers, when traffic grows.** The `transaction-recorded` topic has one
+  partition so that consumers get transactions in the order they were applied: Kafka orders messages only
+  within a partition, and one partition is read by one consumer of a group. When one consumer can no
+  longer keep up, the topic can be split, but the key then decides what stays in order:
+  - *by merchant* (all of a merchant's events in one partition): the ledger would first have to know which
+    accounts belong to which merchant, and the order still breaks for a transaction that touches two
+    merchants (a transfer between them lands in one merchant's partition only) and for the ledger's own
+    accounts (Settlement EUR is in every EUR payment, so its events spread over every partition);
+  - *by the original transaction* (`reversalOf` for a reversal, its own id otherwise): a reversal still
+    arrives after its original, but two transactions on the same account may swap;
+  - *one message per entry, keyed by account*: every account, Settlement included, keeps its order; a
+    transaction becomes several messages, which a consumer joins by transaction id. This is the one that
+    keeps today's promise per account.
+
+  Whatever the key, the relay still publishes from one instance at a time, in outbox order (two publishers
+  would race within a partition), so more partitions do not publish faster; sending in batches would. The
+  number of partitions is chosen up front: adding partitions to a live topic moves keys to other
+  partitions and breaks their order while it happens, so the clean way is a new topic.

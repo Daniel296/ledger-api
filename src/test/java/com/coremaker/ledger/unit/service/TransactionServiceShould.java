@@ -38,6 +38,7 @@ import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
 import com.coremaker.ledger.service.IdempotencyService;
+import com.coremaker.ledger.service.OutboxService;
 import com.coremaker.ledger.service.TransactionService;
 import com.coremaker.ledger.validation.ReversalValidator;
 import com.coremaker.ledger.validation.TransactionValidator;
@@ -47,8 +48,9 @@ class TransactionServiceShould {
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
     private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
-    private final TransactionService transactionService = new TransactionService(
-            accountRepository, transactionRepository, new TransactionValidator(), new ReversalValidator(), idempotencyService);
+    private final OutboxService outboxService = mock(OutboxService.class);
+    private final TransactionService transactionService = new TransactionService(accountRepository, transactionRepository,
+            new TransactionValidator(), new ReversalValidator(), idempotencyService, outboxService);
 
     @BeforeEach
     void runEveryRequestAsANewOne() {
@@ -82,6 +84,7 @@ class TransactionServiceShould {
                 .extracting(Entry::getBalanceAfter)
                 .usingElementComparator(BigDecimal::compareTo)
                 .containsExactly(new BigDecimal("25.50"), new BigDecimal("98.50"), new BigDecimal("1.50"));
+        verify(outboxService).add(recorded);
     }
 
     @Test
@@ -115,6 +118,7 @@ class TransactionServiceShould {
         assertThatThrownBy(() -> transactionService.post("key", unbalanced)).isInstanceOf(LedgerException.class);
 
         verify(transactionRepository, never()).save(any());
+        verify(outboxService, never()).add(any());
         assertThat(merchant.getBalance()).isEqualByComparingTo("25.50");
         assertThat(payouts.getBalance()).isZero();
     }
@@ -168,6 +172,7 @@ class TransactionServiceShould {
         assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
         assertThat(payouts.getBalance()).isZero();
         assertThat(fees.getBalance()).isZero();
+        verify(outboxService).add(reversal);
     }
 
     @Test
@@ -185,6 +190,7 @@ class TransactionServiceShould {
                         refusal -> assertThat(refusal.getCode()).isEqualTo(TRANSACTION_ALREADY_REVERSED));
 
         verify(transactionRepository, never()).save(any());
+        verify(outboxService, never()).add(any());
         assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
         assertThat(payouts.getBalance()).isZero();
     }

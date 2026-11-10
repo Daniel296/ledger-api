@@ -36,6 +36,7 @@ public class TransactionService {
     private final TransactionValidator transactionValidator;
     private final ReversalValidator reversalValidator;
     private final IdempotencyService idempotencyService;
+    private final OutboxService outboxService;
 
     @Transactional(readOnly = true)
     public TransactionResponse get(UUID id) {
@@ -115,7 +116,10 @@ public class TransactionService {
         transaction.setCurrency(firstAccount.getCurrency());
         transaction.setRecordedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
 
-        return TransactionResponse.from(transactionRepository.save(transaction));
+        var recorded = TransactionResponse.from(transactionRepository.save(transaction));
+        outboxService.add(recorded);
+
+        return recorded;
     }
 
     private static Entry entry(UUID accountId, Direction direction, BigDecimal amount) {

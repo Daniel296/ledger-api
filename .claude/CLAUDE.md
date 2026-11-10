@@ -15,6 +15,10 @@ service, starts it and runs the tests.
   committed transaction, then runs the effect in a `READ COMMITTED` transaction that locks the key before any account;
   it refuses to run inside another transaction.
 - Transactions and entries are `@Immutable`.
+- Every recorded transaction is announced through the outbox: `OutboxService.add` writes its message in the
+  transaction that records it (it refuses to run outside one). `OutboxRelay` publishes it: only the instance holding
+  the lock on the one `outbox_publisher` row publishes, in outbox id order, to the one-partition topic
+  `transaction-recorded`; it picks messages by their `published_at` flag, never as "after the last id".
 - `open-in-view` stays off; explicit queries use `@Query`.
 - Never paginate over a collection fetch; page the account statement with keyset, not offset.
 - Add a dependency or a setting only when code needs it.
@@ -35,8 +39,9 @@ service, starts it and runs the tests.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Packages follow the layers, grouped into subfolders: `dto/request` and `dto/response`,
-  `exception/handler`, `model/enums`. Integration tests sit in `integration/api`, `integration/repository`,
-  `integration/service` and `integration/concurrency`, with the shared setup in `integration/support`.
+  `exception/handler`, `model/enums`; Kafka clients live in `messaging`. Integration tests sit in
+  `integration/api`, `integration/repository`, `integration/service` and `integration/concurrency`, with the shared
+  setup in `integration/support`.
 - DTOs are named after the resource in the URL: `<Resource>Request` for what the client sends,
   `<Resource>Response` for what it gets back (`AccountRequest`, `AccountResponse`). The OpenAPI request
   schemas carry the same names; response schemas are the bare resource (`Account`).
@@ -44,8 +49,8 @@ service, starts it and runs the tests.
 - Lines are at most 128 characters.
 - Call chains with more than two calls (streams, builders, requests): one call per line, with
   `.stream()` kept next to its source (`entries.stream()`). Assertions may stay on one line.
-- Method order in controllers and services: reads (get) first, then create (post), then update (put)
-  and delete; private helpers last.
+- Method order in controllers, services and repositories: reads (get) first, then create (post), then update
+  (put), then delete; private helpers last.
 - No method or variable named after a restricted identifier (`record`, `var`, `yield`, `sealed`, `permits`).
 - Never build strings with `+`: use `"...%s...".formatted(...)` (and `{}` placeholders in log calls).
 - No comments and no Javadoc: method and variable names say what the code does.
@@ -74,14 +79,16 @@ service, starts it and runs the tests.
 - Keep tests as simple as possible; add test helpers only when a test needs them.
 - No shared test data in fields: each test builds the objects it needs through general helpers
   (`account(...)`, `debit(...)`); only the class under test and its mocks are fields.
-- Integration tests check every response against `docs/openapi.yaml` (`OpenApiContractConfiguration`).
+- Integration tests check every response against `docs/openapi.yaml` (`OpenApiContractConfiguration`), and every
+  `transaction-recorded` message they read against its payload schema (`Announcements`).
 - Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo; Lombok-generated
   code is excluded through `lombok.config`), with no test that only restates the code.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing
   behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks. Several instances are
-  proven with `SecondInstance`, a second application context on the same MySQL.
-- Every integration test starts from an empty ledger: `@IntegrationTest` deletes everything and runs the
-  settlement accounts' migration again.
+  proven with `SecondInstance`, a second application context on the same MySQL and Kafka.
+- Every integration test starts from an empty ledger: `@IntegrationTest` waits for the outbox publisher, deletes
+  everything and runs the settlement accounts' migration again. A test reads only the announcements published
+  after it started listening (`Announcements.fromNowOn`).
 - Every behaviour change comes with its test in the same change.
 
 ## Workflow
@@ -90,5 +97,6 @@ service, starts it and runs the tests.
   independent review by the `ledger-reviewer` agent.
 - Work is split into commits of at most 20 files, except the project skeleton and the
   Docker / test infrastructure. The developer makes every commit.
-- The API contract (OpenAPI) is written before the code and kept in step with it.
+- The API contract (`docs/openapi.yaml`) and the message contract (`docs/asyncapi.yaml`) are written before the code
+  and kept in step with it.
 - Commit messages are short, in the imperative mood, and carry no AI attribution.
