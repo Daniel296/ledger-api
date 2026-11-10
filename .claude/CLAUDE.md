@@ -35,8 +35,8 @@ service, starts it and runs the tests.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Packages follow the layers, grouped into subfolders: `dto/request` and `dto/response`,
-  `exception/handler`, `model/enums`. Integration tests sit in `integration/api`, `integration/repository`
-  and `integration/concurrency`, with the shared setup in `integration/support`.
+  `exception/handler`, `model/enums`. Integration tests sit in `integration/api`, `integration/repository`,
+  `integration/service` and `integration/concurrency`, with the shared setup in `integration/support`.
 - DTOs are named after the resource in the URL: `<Resource>Request` for what the client sends,
   `<Resource>Response` for what it gets back (`AccountRequest`, `AccountResponse`). The OpenAPI request
   schemas carry the same names; response schemas are the bare resource (`Account`).

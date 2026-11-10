@@ -85,6 +85,81 @@ class TransactionApiShould {
     }
 
     @Test
+    void recordATransactionOnceAndAnswerItsRetryWithTheOriginalResponse() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var key = newKey();
+        var writtenDifferently = """
+                {"entries":[{"amount":"10.00","direction":"DEBIT","accountId":"%s"},
+                {"amount":"10.00","direction":"CREDIT","accountId":"%s"}],"description":"Payment settled"}
+                """.formatted(funding.getId(), merchant.getId());
+
+        var first = post(key, transaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00")));
+        var retry = post(key, writtenDifferently);
+
+        assertThat(first).hasStatus(HttpStatus.CREATED);
+        assertSameResponse(retry, first);
+        assertBalance(merchant, "10.00");
+    }
+
+    @Test
+    void reverseATransactionOnceAndAnswerItsRetryWithTheOriginalResponse() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payment = recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
+        var key = newKey();
+
+        var first = reverse(key, id(payment));
+        var retry = reverse(key, id(payment));
+
+        assertThat(first).hasStatus(HttpStatus.CREATED);
+        assertSameResponse(retry, first);
+        assertBalance(merchant, "0.00");
+    }
+
+    @Test
+    void refuseAnIdempotencyKeyReusedForADifferentRequest() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payment = recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
+        var otherPayment = recordTransaction("Payment settled", debit(funding, "20.00"), credit(merchant, "20.00"));
+        var transactionKey = newKey();
+        var reversalKey = newKey();
+        post(transactionKey, transaction("Payment settled", debit(funding, "1.00"), credit(merchant, "1.00")));
+        reverse(reversalKey, id(payment));
+
+        var otherBody = post(transactionKey, transaction("Payment settled", debit(funding, "2.00"), credit(merchant, "2.00")));
+        var otherTransaction = reverse(reversalKey, id(otherPayment));
+
+        assertThat(otherBody).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(otherBody).bodyJson().extractingPath("$.errorCode").isEqualTo("IDEMPOTENCY_KEY_REUSED");
+        assertThat(otherTransaction).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(otherTransaction).bodyJson().extractingPath("$.errorCode").isEqualTo("IDEMPOTENCY_KEY_REUSED");
+        assertBalance(merchant, "21.00");
+    }
+
+    @Test
+    void judgeARefusedRequestAgainWhenItIsRetried() {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payouts = account(EUR, "0");
+        var key = newKey();
+        var payout = transaction("Payout", debit(merchant, "10.00"), credit(payouts, "10.00"));
+
+        var refused = post(key, payout);
+        recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
+        var retry = post(key, payout);
+
+        assertThat(refused).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(retry).hasStatus(HttpStatus.CREATED);
+        assertBalance(payouts, "10.00");
+    }
+
+    @Test
     void refuseToReverseATransactionTwiceOrToReverseAReversal() throws Exception {
 
         var funding = account(EUR, "1000.00");
@@ -170,26 +245,45 @@ class TransactionApiShould {
         var entries = Collections.nCopies(101, entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var tooManyEntries = recordTransaction("Payout", entries.toArray(String[]::new));
         var reversalOfNotAnId = reverse("not-a-uuid");
+        var payout = transaction("Payout",
+                entry(UUID.randomUUID(), "DEBIT", "1.00"), entry(UUID.randomUUID(), "CREDIT", "1.00"));
+        var noIdempotencyKey = mvc.post()
+                .uri("/v1/transactions")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payout)
+                .exchange();
+        var reversalWithoutIdempotencyKey = mvc.post()
+                .uri("/v1/transactions/{id}/reversal", UUID.randomUUID())
+                .exchange();
+        var emptyIdempotencyKey = post("", payout);
+        var tooLongIdempotencyKey = post("k".repeat(256), payout);
 
         assertThat(noEntries).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(unknownDirection).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(nullEntry).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(tooManyEntries).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(reversalOfNotAnId).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(noIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(reversalWithoutIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(emptyIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(tooLongIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
     }
 
     private MvcTestResult recordTransaction(String description, String... entries) {
 
-        return post("""
-                {"description": "%s", "entries": [%s]}
-                """.formatted(description, String.join(", ", entries)));
+        return post(transaction(description, entries));
     }
 
     private MvcTestResult post(String body) {
 
+        return post(newKey(), body);
+    }
+
+    private MvcTestResult post(String key, String body) {
+
         return mvc.post()
                 .uri("/v1/transactions")
-                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
                 .exchange();
@@ -197,9 +291,14 @@ class TransactionApiShould {
 
     private MvcTestResult reverse(String transactionId) {
 
+        return reverse(newKey(), transactionId);
+    }
+
+    private MvcTestResult reverse(String key, String transactionId) {
+
         return mvc.post()
                 .uri("/v1/transactions/{id}/reversal", transactionId)
-                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .header("Idempotency-Key", key)
                 .exchange();
     }
 
@@ -220,6 +319,18 @@ class TransactionApiShould {
         return result.getResponse().getContentAsString();
     }
 
+    private static void assertSameResponse(MvcTestResult retry, MvcTestResult first) throws Exception {
+
+        assertThat(retry).hasStatus(first.getResponse().getStatus());
+        assertThat(body(retry)).isEqualTo(body(first));
+        assertThat(retry.getResponse().getHeader("Location")).isEqualTo(first.getResponse().getHeader("Location"));
+    }
+
+    private static String newKey() {
+
+        return UUID.randomUUID().toString();
+    }
+
     private void assertBalance(Account account, String balance) {
 
         var read = get("/v1/accounts/{id}", account.getId());
@@ -234,6 +345,13 @@ class TransactionApiShould {
         account.setOverdraftLimit(new BigDecimal(overdraftLimit));
         account.setCreatedAt(Instant.now());
         return accountRepository.save(account);
+    }
+
+    private static String transaction(String description, String... entries) {
+
+        return """
+                {"description": "%s", "entries": [%s]}
+                """.formatted(description, String.join(", ", entries));
     }
 
     private static String debit(Account account, String amount) {
