@@ -203,7 +203,20 @@ Testcontainers, with a second instance of the service for the guarantees of sect
 
 ## AI
 
-How I used AI and how I checked its work: [AI_USAGE.md](AI_USAGE.md).
+I used Claude Code (Anthropic) as a pair programmer throughout the project.
+
+- **For what:** breaking the challenge into small steps (a few commits each, see the history), and drafting the code,
+  the tests and the documentation of each step under my direction.
+- **How I checked it:** every change is built and tested (`./mvnw verify`) before I commit it, and every API response
+  and Kafka message the tests see is checked against its contract. Each step was also reviewed by a second model,
+  independent of the one that wrote it; every finding was fixed, decided with me, moved to a later step or dropped
+  with a reason. I read every diff and made every commit myself; the design decisions are mine.
+- **Instruction files:** the ones written for this project are committed in [.claude](.claude):
+  [CLAUDE.md](.claude/CLAUDE.md) (stack, domain rules, code and test conventions),
+  [implement-step](.claude/skills/implement-step/SKILL.md) (the process every step follows),
+  [ledger-reviewer](.claude/agents/ledger-reviewer.md) (the independent reviewer), and
+  [settings.json](.claude/settings.json) with [require-review.sh](.claude/hooks/require-review.sh), a hook that does
+  not let a step end before its review has been launched.
 
 ## Improvements
 
