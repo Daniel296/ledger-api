@@ -88,7 +88,7 @@ class ConcurrentRetriesShould {
         var responses = sendAtOnce(10, () -> post(key, transfer(merchant, payouts, "10.00")));
 
         assertAllTheSame(responses, HttpStatus.UNPROCESSABLE_CONTENT);
-        assertThat(idempotentRequestRepository.findById(key).orElseThrow().getResponse()).isNull();
+        assertThat(idempotentRequestRepository.findById(key).orElseThrow().getRefusal()).contains("OVERDRAFT_LIMIT_EXCEEDED");
         assertThat(balance(payouts)).isZero();
     }
 

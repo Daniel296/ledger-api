@@ -13,7 +13,9 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.coremaker.ledger.dto.response.ErrorResponse;
 import com.coremaker.ledger.exception.LedgerException;
+import com.coremaker.ledger.model.IdempotentRequest;
 import com.coremaker.ledger.repository.IdempotentRequestRepository;
 
 import tools.jackson.databind.json.JsonMapper;
@@ -38,20 +40,35 @@ public class IdempotencyService {
     public <T> T commitOnce(String idempotencyKey, String operation, Object request, Class<T> responseType,
             Supplier<T> effect) {
 
+        return answerOnce(idempotencyKey, operation, request, responseType, effect, true);
+    }
+
+    @Transactional(propagation = Propagation.NEVER)
+    public <T> T commitOnceForgettingRefusals(String idempotencyKey, String operation, Object request,
+            Class<T> responseType, Supplier<T> effect) {
+
+        return answerOnce(idempotencyKey, operation, request, responseType, effect, false);
+    }
+
+    private <T> T answerOnce(String idempotencyKey, String operation, Object request, Class<T> responseType,
+            Supplier<T> effect, boolean refusalRemembered) {
+
         var requestHash = DigestUtils.sha256Hex(jsonMapper.writeValueAsString(List.of(operation, request)));
         readCommitted.executeWithoutResult(reservation -> idempotentRequestRepository.reserve(idempotencyKey));
 
-        return readCommitted.execute(execution -> respond(idempotencyKey, requestHash, responseType, effect));
+        var answer = readCommitted.execute(
+                execution -> respond(idempotencyKey, requestHash, responseType, effect, refusalRemembered));
+        return answer.get();
     }
 
-    private <T> T respond(String idempotencyKey, String requestHash, Class<T> responseType, Supplier<T> effect) {
+    private <T> Supplier<T> respond(String idempotencyKey, String requestHash, Class<T> responseType,
+            Supplier<T> effect, boolean refusalRemembered) {
 
         var idempotentRequest = idempotentRequestRepository.findByIdForUpdate(idempotencyKey);
-        if (idempotentRequest.getResponse() == null) {
-            var response = effect.get();
+        if (idempotentRequest.getRequestHash() == null) {
+            var answer = answerFirst(idempotentRequest, effect, refusalRemembered);
             idempotentRequest.setRequestHash(requestHash);
-            idempotentRequest.setResponse(jsonMapper.writeValueAsString(response));
-            return response;
+            return answer;
         }
 
         if (!requestHash.equals(idempotentRequest.getRequestHash())) {
@@ -59,6 +76,32 @@ public class IdempotencyService {
                     "Idempotency key %s was already used for a different request".formatted(idempotencyKey));
         }
 
-        return jsonMapper.readValue(idempotentRequest.getResponse(), responseType);
+        if (idempotentRequest.getRefusal() != null) {
+            var refusal = jsonMapper.readValue(idempotentRequest.getRefusal(), ErrorResponse.class);
+            throw new LedgerException(refusal.errorCode(), refusal.message());
+        }
+
+        var response = jsonMapper.readValue(idempotentRequest.getResponse(), responseType);
+        return () -> response;
+    }
+
+    private <T> Supplier<T> answerFirst(IdempotentRequest idempotentRequest, Supplier<T> effect,
+            boolean refusalRemembered) {
+
+        try {
+            var response = effect.get();
+            idempotentRequest.setResponse(jsonMapper.writeValueAsString(response));
+            return () -> response;
+        } catch (LedgerException refusal) {
+            if (!refusalRemembered) {
+                throw refusal;
+            }
+
+            idempotentRequest.setRefusal(
+                    jsonMapper.writeValueAsString(new ErrorResponse(refusal.getCode(), refusal.getMessage())));
+            return () -> {
+                throw refusal;
+            };
+        }
     }
 }

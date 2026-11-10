@@ -65,8 +65,8 @@ public class TransactionService {
 
     public TransactionResponse settle(PaymentSettled payment) {
 
-        return idempotencyService.commitOnce("payment-settled:%s".formatted(payment.paymentId()), "settlePayment", payment,
-                TransactionResponse.class, () -> recordPayment(payment));
+        return idempotencyService.commitOnceForgettingRefusals("payment-settled:%s".formatted(payment.paymentId()),
+                "settlePayment", payment, TransactionResponse.class, () -> recordPayment(payment));
     }
 
     private TransactionResponse recordTransaction(TransactionRequest request) {

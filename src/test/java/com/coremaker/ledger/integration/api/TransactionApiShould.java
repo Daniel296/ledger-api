@@ -142,7 +142,7 @@ class TransactionApiShould {
     }
 
     @Test
-    void judgeARefusedRequestAgainWhenItIsRetried() {
+    void answerTheRetryOfARefusedRequestWithTheSameRefusal() throws Exception {
 
         var funding = account(EUR, "1000.00");
         var merchant = account(EUR, "0");
@@ -153,10 +153,12 @@ class TransactionApiShould {
         var refused = post(key, payout);
         recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
         var retry = post(key, payout);
+        var anotherPayout = post(key, transaction("Payout", debit(merchant, "5.00"), credit(payouts, "5.00")));
 
-        assertThat(refused).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
-        assertThat(retry).hasStatus(HttpStatus.CREATED);
-        assertBalance(payouts, "10.00");
+        assertThat(refused).bodyJson().extractingPath("$.errorCode").isEqualTo("OVERDRAFT_LIMIT_EXCEEDED");
+        assertSameResponse(retry, refused);
+        assertThat(anotherPayout).bodyJson().extractingPath("$.errorCode").isEqualTo("IDEMPOTENCY_KEY_REUSED");
+        assertBalance(payouts, "0.00");
     }
 
     @Test

@@ -11,10 +11,12 @@ service, starts it and runs the tests.
 - Liquibase owns the schema, as formatted SQL changelogs; Hibernate only validates (`ddl-auto: validate`).
 - A committed changeset is never edited: every schema change is a new changeset.
 - Accounts are locked pessimistically (`@Lock(PESSIMISTIC_WRITE)`), always in ascending id order.
-- Every `POST`, and every `payment-settled` message (key `payment-settled:<paymentId>`, hashed on the payment's
-  business fields, never its event id), writes through `IdempotencyService.commitOnce`: it reserves the idempotency
-  key in its own committed transaction, then runs the effect in a `READ COMMITTED` transaction that locks the key
-  before any account; it refuses to run inside another transaction.
+- Every `POST` writes through `IdempotencyService.commitOnce`, and every `payment-settled` message (key
+  `payment-settled:<paymentId>`, hashed on the payment's business fields, never its event id) through
+  `commitOnceForgettingRefusals`: both reserve the idempotency key in its own committed transaction, then run the
+  effect in a `READ COMMITTED` transaction that locks the key before any account; they refuse to run inside another
+  transaction. `commitOnce` stores the answer, a `LedgerException` refusal included, in that same transaction, so
+  services must throw a refusal before they change anything; a refused payment leaves its key empty.
 - Transactions and entries are `@Immutable`.
 - Every recorded transaction is announced through the outbox: `OutboxService.add` writes its message in the
   transaction that records it (it refuses to run outside one). `OutboxRelay` publishes it: only the instance holding

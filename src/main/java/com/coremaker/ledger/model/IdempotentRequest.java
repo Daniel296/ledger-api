@@ -20,4 +20,7 @@ public class IdempotentRequest {
 
     @Column(columnDefinition = "mediumtext")
     private String response;
+
+    @Column(columnDefinition = "mediumtext")
+    private String refusal;
 }

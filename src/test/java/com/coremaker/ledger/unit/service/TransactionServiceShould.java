@@ -60,6 +60,8 @@ class TransactionServiceShould {
 
         when(idempotencyService.commitOnce(any(), any(), any(), any(), any()))
                 .then(call -> call.<Supplier<?>>getArgument(4).get());
+        when(idempotencyService.commitOnceForgettingRefusals(any(), any(), any(), any(), any()))
+                .then(call -> call.<Supplier<?>>getArgument(4).get());
     }
 
     @Test
@@ -217,8 +219,8 @@ class TransactionServiceShould {
                 .containsExactly(tuple(settlement.getId(), DEBIT, "125.50"), tuple(merchant.getId(), CREDIT, "125.50"));
         assertThat(settlement.getBalance()).isEqualByComparingTo("-125.50");
         assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
-        verify(idempotencyService).commitOnce(eq("payment-settled:pay-42"), eq("settlePayment"), eq(payment),
-                eq(TransactionResponse.class), any());
+        verify(idempotencyService).commitOnceForgettingRefusals(eq("payment-settled:pay-42"), eq("settlePayment"),
+                eq(payment), eq(TransactionResponse.class), any());
         verify(outboxService).add(settled);
     }
 

@@ -5,6 +5,7 @@ import static com.coremaker.ledger.exception.ErrorCode.UNSUPPORTED_CURRENCY;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -64,15 +65,63 @@ class IdempotencyServiceShould {
     }
 
     @Test
-    void runAnotherRequestOnAKeyWhoseFirstRequestTookNoEffect() {
+    void answerTheRetryOfARefusedRequestWithTheSameRefusalWithoutRunningItAgain() {
 
         reserved();
         var runs = new AtomicInteger();
 
-        assertThatThrownBy(() -> idempotencyService.commitOnce("key", "openAccount", new AccountRequest("GBP", null),
-                AccountResponse.class, () -> {
+        var first = catchThrowableOfType(LedgerException.class, () -> openGbp(runs));
+        var retry = catchThrowableOfType(LedgerException.class, () -> openGbp(runs));
+
+        assertThat(runs).hasValue(1);
+        assertThat(retry.getCode()).isEqualTo(UNSUPPORTED_CURRENCY);
+        assertThat(retry).hasMessage(first.getMessage());
+    }
+
+    @Test
+    void refuseAnotherRequestOnAKeyWhoseRequestWasRefused() {
+
+        reserved();
+        catchThrowableOfType(LedgerException.class, () -> openGbp(new AtomicInteger()));
+        var runs = new AtomicInteger();
+
+        assertRefused(() -> open("openAccount", "EUR", runs));
+        assertThat(runs).hasValue(0);
+    }
+
+    @Test
+    void judgeARefusedRequestAgainWhenRefusalsAreForgotten() {
+
+        reserved();
+        var runs = new AtomicInteger();
+
+        assertThatThrownBy(() -> idempotencyService.commitOnceForgettingRefusals("key", "settlePayment", "payment",
+                String.class, () -> {
+
+                    runs.incrementAndGet();
                     throw new LedgerException(UNSUPPORTED_CURRENCY, "GBP is not supported");
                 })).isInstanceOf(LedgerException.class);
+        var retry = idempotencyService.commitOnceForgettingRefusals("key", "settlePayment", "payment", String.class,
+                () -> {
+
+                    runs.incrementAndGet();
+                    return "settled";
+                });
+
+        assertThat(runs).hasValue(2);
+        assertThat(retry).isEqualTo("settled");
+    }
+
+    @Test
+    void runTheRetryOfARequestThatFailedWithoutAnAnswer() {
+
+        reserved();
+        var runs = new AtomicInteger();
+
+        assertThatThrownBy(() -> idempotencyService.commitOnce("key", "openAccount", new AccountRequest("EUR", null),
+                AccountResponse.class, () -> {
+                    throw new IllegalStateException("The database went away");
+                })).isInstanceOf(IllegalStateException.class);
         open("openAccount", "EUR", runs);
 
         assertThat(runs).hasValue(1);
@@ -90,6 +139,16 @@ class IdempotencyServiceShould {
 
                     runs.incrementAndGet();
                     return new AccountResponse(UUID.randomUUID(), EUR, "0.00", "0.00", Instant.now());
+                });
+    }
+
+    private void openGbp(AtomicInteger runs) {
+
+        idempotencyService.commitOnce("key", "openAccount", new AccountRequest("GBP", null), AccountResponse.class,
+                () -> {
+
+                    runs.incrementAndGet();
+                    throw new LedgerException(UNSUPPORTED_CURRENCY, "GBP is not supported");
                 });
     }
 

@@ -15,3 +15,5 @@ databaseChangeLog:
       file: db/changelog/changes/007-index-settlement-accounts.sql
   - include:
       file: db/changelog/changes/008-add-correlation-id-to-outbox.sql
+  - include:
+      file: db/changelog/changes/009-add-refusal-to-idempotent-requests.sql

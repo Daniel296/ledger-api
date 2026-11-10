@@ -13,8 +13,9 @@ info:
     - Every `POST` requires an `Idempotency-Key`. A retry with the same key and the same request gets
       the original response (status, body and `Location`) and the request takes effect at most once,
       also when the retry reaches another instance or the first attempt failed before finishing. A
-      retry sent while the first attempt is still running waits for it. Only a request that took
-      effect is remembered: a refused one can be retried with the same key and is judged again.
+      retry sent while the first attempt is still running waits for it. A request refused by a ledger
+      rule (404, 409, 422) is remembered too: its retry gets the same refusal. A malformed request
+      (400) or one that found the accounts busy (503) is not remembered.
     - An error is `{"errorCode", "message"}`: a stable code a system can act on, and a message
       naming the value at fault. Only the first broken rule is reported. Errors raised by the HTTP
       layer itself (400 for a malformed request, 405, 415, 500) come with Spring Boot's standard
@@ -258,9 +259,9 @@ components:
         when retrying it. Keys are global and case-sensitive: a request is the same only if the
         operation, its path and its body all match, the body as read (spacing and field order do
         not matter; amounts are compared as written, so `10.0` and `10.00` differ). Once a request
-        has taken effect with a key, the same key with a different request, on any endpoint, is
-        refused with `IDEMPOTENCY_KEY_REUSED`; a key whose request was refused can be used again.
-        The ledger keeps a key for at least 24 hours.
+        has been answered with a key, recorded or refused by a ledger rule, the same key with a
+        different request, on any endpoint, is refused with `IDEMPOTENCY_KEY_REUSED`. The ledger
+        keeps a key for at least 24 hours.
       schema:
         type: string
         minLength: 1
