@@ -1,376 +1,264 @@
 # Ledger API
 
-A double-entry ledger service: money is held in accounts and moves only through balanced, immutable
-transactions. Transactions are recorded through a REST API and from payment-settled messages, and
-every recorded transaction is announced to other services through Kafka.
+A double-entry ledger. Money is held in accounts and moves only through transactions whose debits and credits
+balance. A recorded transaction is never changed: a mistake is corrected by a reversal, which is a new transaction.
+Transactions are recorded through a REST API and from `payment-settled` messages, and every recorded transaction is
+announced on Kafka.
 
-## Stack
-
-Java 17, Spring Boot 4, Spring Data JPA (Hibernate), MySQL 8.4, Liquibase, Kafka, Maven (wrapper
-included).
+Java 17, Spring Boot 4, Spring Data JPA (Hibernate), MySQL 8.4, Liquibase, Kafka 4.2, Maven (wrapper included).
 
 ## Run
 
-Requires Docker, Git and a JDK 17+ (on the `PATH` or in `JAVA_HOME`).
+You need Docker, Git and a JDK 17 or newer.
 
 ```bash
+git clone https://github.com/Daniel296/ledger-api.git
+cd ledger-api
 ./run.sh
 ```
 
-The script builds the service image, starts it with MySQL and Kafka through Docker Compose, waits
-until it is healthy, then runs the test suite. The tests start their own MySQL and Kafka through
-Testcontainers, so they never touch the running service's data.
+`run.sh` builds the service, starts it in Docker with MySQL and Kafka, waits until it is healthy, then runs the tests.
+The tests start their own MySQL and Kafka (Testcontainers), so they never touch the running service's data.
 
-The service listens on `http://localhost:8080`; `GET /actuator/health` reports its status. Its MySQL is
-reachable from the host at `jdbc:mysql://localhost:3308/ledger` (user `ledger`, password `ledger`), for a
-database client; 3308 avoids clashing with a local MySQL on 3306. Kafka is reachable from the host at
-`localhost:9094`, for a Kafka client: a second listener, since the service and the other containers use
-`kafka:9092`, a name that exists only inside the Docker network.
-Stop everything with `docker compose down` (add `-v` to also drop the database volume).
+- API: `http://localhost:8080` (health: `/actuator/health`). Contract: [docs/openapi.yaml](docs/openapi.yaml).
+- Kafka messages: [docs/asyncapi.yaml](docs/asyncapi.yaml). From the host, Kafka is `localhost:9094`.
+- MySQL: `localhost:3308`, database, user and password `ledger`.
+- Stop everything: `docker compose down -v` (`-v` also deletes the data).
 
-To send a sample payment-settled message, as the payment system would (the script runs Kafka's console producer
-inside the Kafka container, so nothing needs to be installed):
+## Examples
+
+They follow the challenge's examples: Merchant 42 is paid 125.50 EUR, paid out 98.50 EUR with a fee of 1.50, and the
+payout is reversed. Run them in this order, from the repository, on the stack `run.sh` started. Each answer is shown
+under its command as a comment, trimmed.
+
+**Accounts.** Every `POST` needs an `Idempotency-Key`. The same request with the same key is a retry: it gets the same
+answer and opens nothing. The id is the first field of every answer, so the commands keep it in a variable.
 
 ```bash
-./scripts/send-payment-settled.sh <merchantAccountId> <amount> <currency> [paymentId]
+curl -i localhost:8080/v1/accounts -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: open-merchant-42' -d '{"currency": "EUR"}'
+# HTTP/1.1 201
+# Location: http://localhost:8080/v1/accounts/1f25741e-b407-4fa3-b49c-d811626e53ff
+# {"id":"1f25741e-b407-4fa3-b49c-d811626e53ff","currency":"EUR","overdraftLimit":"0.00","balance":"0.00",…}
+
+MERCHANT=$(curl -s localhost:8080/v1/accounts -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: open-merchant-42' -d '{"currency": "EUR"}' | cut -d '"' -f 4)
+PAYOUTS=$(curl -s localhost:8080/v1/accounts -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: open-payouts-eur' -d '{"currency": "EUR"}' | cut -d '"' -f 4)
+FEES=$(curl -s localhost:8080/v1/accounts -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: open-fees-eur' -d '{"currency": "EUR"}' | cut -d '"' -f 4)
 ```
 
-Every message gets a new event id; passing the `paymentId` of an earlier one sends that payment again, which the
-ledger records only once. Messages it cannot record are set aside on `payment-settled-dlt`, with the reason in their
-headers:
+**A settled payment** (example 1). The script plays the payment system: it publishes a `payment-settled` message with
+Kafka's console producer, inside the Kafka container, under a new event id every time. The ledger records it within a
+second or two. Sending the same `paymentId` again is a redelivery and records nothing.
 
 ```bash
+./scripts/send-payment-settled.sh "$MERCHANT" 125.50 EUR pay-42
+# Sent: {"eventId": "330b21f3-…", "paymentId": "pay-42", "merchantAccountId": "1f25741e-…", "amount": "125.50", …}
+
+curl localhost:8080/v1/accounts/$MERCHANT
+# {"id":"1f25741e-…","currency":"EUR","overdraftLimit":"0.00","balance":"125.50",…}
+```
+
+**A transaction** (example 2), read back, then one refused for the overdraft limit (example 5). `X-Request-Id` is
+optional; it comes back on the response and goes into the logs and the announcement.
+
+```bash
+PAYOUT_REQUEST='{"description": "Payout to Merchant 42", "entries": [
+    {"accountId": "'$MERCHANT'", "direction": "DEBIT", "amount": "100.00"},
+    {"accountId": "'$PAYOUTS'", "direction": "CREDIT", "amount": "98.50"},
+    {"accountId": "'$FEES'", "direction": "CREDIT", "amount": "1.50"}]}'
+curl -i localhost:8080/v1/transactions -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: payout-42' -H 'X-Request-Id: payout-42' -d "$PAYOUT_REQUEST"
+# HTTP/1.1 201
+# X-Request-Id: payout-42
+# Location: http://localhost:8080/v1/transactions/199b4524-9fb9-4e9e-9893-6a206255fc62
+# {"id":"199b4524-…","description":"Payout to Merchant 42","currency":"EUR",
+#  "entries":[{"accountId":"1f25741e-…","direction":"DEBIT","amount":"100.00"},
+#             {"accountId":"d60ddaf5-…","direction":"CREDIT","amount":"98.50"},
+#             {"accountId":"edb7a92d-…","direction":"CREDIT","amount":"1.50"}],
+#  "recordedAt":"2026-11-10T23:07:44.199618Z"}
+
+PAYOUT=$(curl -s localhost:8080/v1/transactions -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: payout-42' -d "$PAYOUT_REQUEST" | cut -d '"' -f 4)
+curl localhost:8080/v1/transactions/$PAYOUT
+# the same transaction
+
+curl -i localhost:8080/v1/transactions -H 'Content-Type: application/json' \
+    -H 'Idempotency-Key: payout-too-large' -d '{"description": "Payout too large", "entries": [
+    {"accountId": "'$MERCHANT'", "direction": "DEBIT", "amount": "50.00"},
+    {"accountId": "'$PAYOUTS'", "direction": "CREDIT", "amount": "50.00"}]}'
+# HTTP/1.1 422
+# {"errorCode":"OVERDRAFT_LIMIT_EXCEEDED",
+#  "message":"Account 1f25741e-… would go to -24.50, past its overdraft limit of 0.00"}
+```
+
+The other refusals of example 5 answer `422` too, and record nothing: `UNBALANCED`, `TOO_MANY_DECIMAL_PLACES`,
+`CURRENCY_MISMATCH`, `TOO_FEW_ENTRIES` and `UNKNOWN_ACCOUNT`; an account in `EURO` or `ABC` gets `INVALID_CURRENCY`, one
+in `GBP` `UNSUPPORTED_CURRENCY`. The message names the value at fault.
+
+**A reversal** (example 3), then a second one, refused. `ASOF` notes the time before it, for the past balance below.
+
+```bash
+sleep 1; ASOF=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+curl -i -X POST localhost:8080/v1/transactions/$PAYOUT/reversal -H 'Idempotency-Key: reverse-payout-42'
+# HTTP/1.1 201
+# Location: http://localhost:8080/v1/transactions/11838a6f-9410-49d1-976d-12c6f73d3917
+# {"id":"11838a6f-…","description":"Reversal of 199b4524-…","currency":"EUR","entries":[…],
+#  "recordedAt":"2026-11-10T23:07:45.909786Z","reversalOf":"199b4524-9fb9-4e9e-9893-6a206255fc62"}
+
+curl -i -X POST localhost:8080/v1/transactions/$PAYOUT/reversal -H 'Idempotency-Key: reverse-payout-42-again'
+# HTTP/1.1 409
+# {"errorCode":"TRANSACTION_ALREADY_REVERSED","message":"Transaction 199b4524-… was already reversed"}
+```
+
+**Entries and a past balance.** Entries come newest first, each with the balance after it; the next page starts after
+`nextCursor`.
+
+```bash
+curl "localhost:8080/v1/accounts/$MERCHANT/entries?limit=2"
+# {"entries":[{"transactionId":"11838a6f-…","direction":"CREDIT","amount":"100.00","balanceAfter":"125.50",…},
+#             {"transactionId":"199b4524-…","direction":"DEBIT","amount":"100.00","balanceAfter":"25.50",…}],
+#  "nextCursor":"3"}
+curl "localhost:8080/v1/accounts/$MERCHANT/entries?limit=2&cursor=3"
+# {"entries":[{"transactionId":"571f8335-…","direction":"CREDIT","amount":"125.50","balanceAfter":"125.50",…}]}
+
+curl "localhost:8080/v1/accounts/$MERCHANT/balance?asOf=$ASOF"
+# {"accountId":"1f25741e-…","currency":"EUR","balance":"25.50","asOf":"2026-11-10T23:07:45Z"}
+```
+
+**Dead letters and announcements.** A payment the ledger cannot record goes unchanged to `payment-settled-dlt`, with
+the reason in its headers. Every recorded transaction is announced on `transaction-recorded`. Stop each consumer with
+Ctrl-C.
+
+```bash
+./scripts/send-payment-settled.sh 00000000-0000-0000-0000-000000000000 10.00 EUR
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
     --topic payment-settled-dlt --from-beginning --formatter-property print.headers=true
-```
+# errorCode:UNKNOWN_ACCOUNT,errorMessage:Account 00000000-0000-0000-0000-000000000000 does not exist,… {"eventId":…}
 
-To watch the announcements of the running service:
-
-```bash
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
-    --topic transaction-recorded --from-beginning --formatter-property print.key=true
+    --topic transaction-recorded --from-beginning --formatter-property print.key=true \
+    --formatter-property print.headers=true
+# correlationId:pay-42     571f8335-…  {"id":"571f8335-…","description":"Payment pay-42 settled",…}
+# correlationId:payout-42  199b4524-…  {"id":"199b4524-…","description":"Payout to Merchant 42",…}
+# correlationId:2b8d6a03-… 11838a6f-…  {"id":"11838a6f-…","description":"Reversal of 199b4524-…",…}
 ```
 
-## API
+## Decisions
 
-The contract is written first and lives in [docs/openapi.yaml](docs/openapi.yaml). Every response an
-integration test receives is checked against it (status, headers, body), and every operation a test
-calls must exist in it. What no test calls is not checked, so each endpoint comes with its tests.
+**API.** Resources under `/v1`: accounts with their entries and past balances, transactions, and the reversal of a
+transaction (singular: a transaction is reversed at most once). `v1` only grows, so clients ignore unknown fields.
+Amounts are decimal strings, `BigDecimal` in the code and `DECIMAL(19, 4)` in MySQL, so `0.10 + 0.20` is exactly
+`0.30`; a JSON number is accepted too and read exactly. Errors are `{"errorCode", "message"}`: `400` malformed (Spring
+Boot's standard error body), `404` unknown id, `409` already reversed or a reversal, `422` a broken rule, `503`
+accounts busy. The contracts came before the code, and the tests check every response and message against them.
 
-| Method | Path | |
-|---|---|---|
-| `POST` | `/v1/accounts` | Open an account |
-| `GET` | `/v1/accounts/{accountId}` | Read an account with its balance |
-| `GET` | `/v1/accounts/{accountId}/entries` | An account's entries, newest first, paged, with the balance after each |
-| `GET` | `/v1/accounts/{accountId}/balance?asOf=…` | An account's balance as at a past instant |
-| `POST` | `/v1/transactions` | Record a transaction |
-| `GET` | `/v1/transactions/{transactionId}` | Read a transaction with its entries |
-| `POST` | `/v1/transactions/{transactionId}/reversal` | Reverse a transaction (at most once, hence singular) |
+**Pessimistic locking.** Recording a transaction locks its accounts in one `SELECT … FOR UPDATE`, in id order, then
+checks the rules and writes, in one database transaction. No overdraft limit is broken, no update is lost, and A → B
+and B → A cannot deadlock, on any number of instances, since they share only MySQL. Optimistic locking would retry all
+the time: every payment in a currency touches its settlement account. A lock not obtained in 5 seconds is answered
+`503` with `Retry-After`, and nothing is recorded. A `UNIQUE` index on `reversal_of` allows one reversal per
+transaction.
 
-- **Amounts are decimal strings** (`"125.50"`), so no client reads them as floating point.
-- **Every `POST` needs an `Idempotency-Key`** (`400` without one): a retry with the same key and the
-  same request gets the original response (status, body and `Location`) and takes effect at most once;
-  once a request has taken effect, the same key with a different request, on any endpoint, is refused
-  with `422 IDEMPOTENCY_KEY_REUSED`.
-  See [Idempotency](#idempotency).
-- **Errors** are `{"errorCode", "message"}`: a stable code a calling system can act on, and a
-  message naming the value at fault. `400` malformed request, `404` unknown resource in the path, `409`
-  conflicting state (already reversed, or itself a reversal), `422` a ledger rule is broken or an
-  idempotency key is reused for a different request.
-- **Versioned in the path**: `v1` only evolves additively, so clients must ignore unknown fields.
-- **`X-Request-Id`** (optional, generated when missing or invalid) is returned on the response and carried
-  into the logs and the announcement a request causes; see [Following a request](#following-a-request).
-- **Entries are paged by cursor**, not offset, so entries recorded meanwhile never shift a page.
-  See [Statement and past balances](#statement-and-past-balances).
+**Idempotency.** The key is first reserved, in a short transaction of its own. The transaction that records the effect
+then locks the key's row and stores in it a hash of the request and the answer, with the effect: both are committed or
+neither. A retry gets the stored answer, on any instance; a copy sent at the same time waits for the first; after a
+crash before the commit, the retry runs as a first attempt. A refusal (`404`, `409`, `422`) is stored like a success;
+`400` and `503` are not stored. The same key with a different request gets `422 IDEMPOTENCY_KEY_REUSED`.
 
-## Idempotency
+**Outbox and Kafka.** Kafka keeps messages for replay, orders them within a partition and shares partitions among the
+instances of a consumer group. A recorded transaction writes its message to an `outbox` table, in the same database
+transaction. A relay runs every 200 ms on every instance; only the one holding the lock on the single
+`outbox_publisher` row publishes, in outbox order, to `transaction-recorded` (one partition), waits for each
+acknowledgement, then marks the messages published. The message is the transaction as the API returns it, keyed by
+its id, with the `X-Request-Id` (or the payment id) in a `correlationId` header.
 
-A client that gets no answer can send the same `POST` again with the same `Idempotency-Key`.
+**The payment-settled consumer.** Every instance consumes `payment-settled` in the group `ledger`. A payment debits the
+settlement account of its currency and credits the merchant, through the same idempotency, with the key
+`payment-settled:<paymentId>`, so a copy under any event id records nothing. The offset is committed after the
+transaction. A refused message (malformed, unknown account, wrong currency) goes unchanged to `payment-settled-dlt`,
+with `errorCode` and `errorMessage` headers, and the next one goes on; the refusal is not stored, so the payment can be
+sent again once its cause is fixed. Any other failure (MySQL down, a busy account) is retried until it succeeds.
 
-- **The key is stored with the effect.** The key is first reserved: an empty row, inserted and committed
-  on its own. The transaction that records the account or transaction then locks that row
-  (`SELECT … FOR UPDATE`) and writes into it a SHA-256 of the request and the response, together with the
-  effect. If that transaction commits, both are there; if it does not (a refused request, an error, an
-  instance that dies before the commit), the row stays empty and the retry runs as if it were the first
-  attempt.
-- **The same request** means the same operation, the same id in the path and the same body as read:
-  spacing and field order do not matter, a different value does, and so does an amount written with
-  another scale (`10.0` for `10.00`). Keys are global and compared byte for byte, so `abc` and `ABC` are
-  two keys.
-- **The response is stored, not rebuilt**: a retried account opening shows the balance the account had
-  when it was opened, and the `Location` is built from the stored id.
-- **Only what took effect is remembered.** A refused request leaves an empty reservation, so its retry is
-  judged again against the balances of that moment: it may now succeed, and it never takes effect twice.
-  The key is not tied to the refused request either: it can still be used for a corrected one.
-- **Copies sent at once wait for each other** on the reserved row's lock. A copy that arrives while the
-  first attempt is still running waits, then answers with the stored response or, if the first attempt
-  took no effect, runs itself; no client ever sees "still in progress". The reservation is committed
-  before anyone waits on it: copies waiting on a row whose insert is then rolled back inherit gap locks
-  in MySQL and deadlock each other, which the concurrency tests caught. The key is always locked before
-  the accounts, so its lock cannot deadlock with theirs.
-- **Any instance.** The key and its lock live only in the shared MySQL, so it does not matter which
-  instance a retry reaches. The concurrency tests send the copies through the HTTP layer at once, each on
-  its own thread, database connection and transaction: they meet only in the database, as copies sent to
-  different instances would.
-- **A crash before the commit** is tested by a first attempt that writes and then fails before its
-  transaction commits, which MySQL rolls back as it does the open transaction of an instance that dies;
-  the retry with the same key records the transaction once.
-- The effect runs under `READ COMMITTED`, in a transaction `IdempotencyService` starts itself and never
-  joins from a caller (it refuses to run inside one): the reads that decide anything (the key, the
-  accounts) are locking reads, and a reversal needs it to see a reversal committed while it waited.
-- Keys are kept for at least 24 hours, as the contract promises; for now they are never purged.
+**Code structure.** `controller` (REST) and `messaging` (Kafka) call one method of a `service`, which owns the
+database transaction and calls `validation` and `repository`, the only place with queries. The `model` classes are
+plain JPA entities; every rule of a transaction is in `TransactionValidator`, checked against locked accounts and
+unit-tested without Spring. Requests, responses and messages are DTOs (`dto`), never entities; every refusal is a
+`LedgerException` with an `ErrorCode`. Tests are `unit` (plain JUnit) or `integration` (MySQL and Kafka in
+Testcontainers, with a second instance of the service for the guarantees of section 6).
 
-## Settled payments
+**What a consumer of `transaction-recorded` can rely on.**
+- *Can it miss a transaction?* No. The message is committed with the transaction and stays in the outbox until Kafka
+  acknowledges it. A refused transaction is never announced.
+- *Can it see one twice?* Yes. A send not acknowledged within 5 seconds is sent again by the next relay run, and Kafka
+  may still deliver the first attempt: during a 16-second Kafka pause, one transaction arrived 3 times. A relay that
+  dies before marking a message published sends it again too. Copies are identical: deduplicate on the id (the key).
+- *In what order?* Transactions on the same account arrive in the order they were applied, and a reversal after its
+  original. Transactions with no account in common may arrive in either order.
+- *What if the service crashes right after recording one?* The message is already in the outbox: another instance, or
+  the same one restarted, publishes it. While Kafka is down, messages wait there and go out in order later.
 
-The payment system announces every settled payment on the Kafka topic `payment-settled`; the message contract is
-[docs/asyncapi.yaml](docs/asyncapi.yaml). Every instance consumes it, in the consumer group `ledger`, and records each
-payment as a transaction that debits the settlement account of its currency and credits the merchant's account,
-described as `Payment <paymentId> settled` and announced on `transaction-recorded` like any other:
+## AI
 
-```
-payment-settled message, on any instance
-└─ PaymentSettledConsumer.consume        read the JSON: every field there and well formed, or MALFORMED_MESSAGE
-   └─ TransactionService.settle          debit the settlement account of the currency, credit the merchant
-      └─ IdempotencyService.commitOnce   key payment-settled:<paymentId>; hash of paymentId, merchant, amount, currency
-         └─ as POST /v1/transactions     lock the accounts, check the rules, save, outbox; commit
-└─ commit the offset ◄── only once the transaction is committed
-```
-
-- **Recorded once, however often it arrives.** The payment id is the idempotency key (`payment-settled:<paymentId>`;
-  keys are global, and the prefix keeps them apart from the REST clients' keys), and the request hash covers the
-  payment id, merchant, amount and currency, never the event id. A copy, under the same event id or a new one, finds
-  the stored transaction and records nothing; copies reaching two instances at once queue on the key's lock, as REST
-  retries do. A message with the same payment id but another merchant, amount or currency is not a copy: it is refused
-  with `IDEMPOTENCY_KEY_REUSED` and dead-lettered.
-- **Nothing is lost when an instance crashes.** The offset is committed only after the transaction (Spring Kafka's
-  default), so an instance that dies in between leaves the message to be delivered again, to itself or to another
-  instance, which recognizes it.
-- **A message the ledger cannot record is set aside, not lost, and does not block the ones behind it.** Malformed
-  JSON, a missing field, an unknown account, a merchant account in another currency, an amount that is not positive
-  or has too many decimals: the message goes unchanged (same key, same value) to `payment-settled-dlt`, on the same
-  partition, with the headers `errorCode` and `errorMessage`, and the consumer moves on. A refusal is not remembered,
-  so a dead-lettered payment can be sent again once its cause is fixed: for a merchant whose account was not open
-  yet, open the account and send the payment again with the same `paymentId`. The same message can land on the
-  dead-letter topic twice, when it is delivered again before its offset was committed; sending it again still
-  records it once.
-- **Any other failure is retried, never dead-lettered.** An error that is not one of the ledger's refusals (the
-  database unavailable, an account locked for longer than 5 seconds, a bug) is retried on the same message, 2, 3, 4.5
-  and up to 30 seconds apart (Spring's default back-off), until it succeeds: dead-lettering it would set aside a
-  payment that is fine. The messages behind it on that partition wait, so a bug that fails one message every time
-  stops its partition until it is fixed, which shows as consumer lag; so would a merchant balance growing past 15
-  integer digits, which MySQL refuses.
-- **Two partitions, one consumer thread per instance.** Every payment in a currency locks the same settlement account,
-  so more threads would not record faster; the two partitions let two instances share the work. The ledger creates
-  `payment-settled` and `payment-settled-dlt` at startup, for the demo; in production the payment system would own
-  them.
-
-## Announcements
-
-Every recorded transaction, reversals included, is announced on the Kafka topic `transaction-recorded`,
-as the same JSON the API returns for it. The message contract is [docs/asyncapi.yaml](docs/asyncapi.yaml):
-its payload is the `Transaction` schema of the OpenAPI contract, and every message an integration test
-reads is checked against it.
-
-Two flows, each in its own database transaction. Recording a transaction (or a reversal) writes its
-message to the outbox:
-
-```
-POST /v1/transactions
-└─ TransactionService.post
-   └─ IdempotencyService.commitOnce              one READ COMMITTED transaction ◄── starts here
-      ├─ lock the idempotency key                SELECT … FOR UPDATE
-      ├─ TransactionService.apply
-      │   ├─ lock the accounts, check the rules  SELECT … FOR UPDATE, in id order
-      │   ├─ save the transaction                INSERT transactions, entries; UPDATE accounts
-      │   └─ OutboxService.add                   INSERT outbox  (joins the transaction, never opens one)
-      ├─ keep the response on the key            UPDATE idempotent_requests
-      └─ commit ◄── balances, transaction, entries and message: all of them, or none
-```
-
-and the relay, which knows nothing about requests, publishes it:
-
-```
-every 200 ms, on every instance: OutboxRelay.publishPending, in its own READ COMMITTED transaction
-├─ lock the one outbox_publisher row     SELECT … FOR UPDATE SKIP LOCKED; locked elsewhere → stop
-├─ read up to 100 unpublished messages   SELECT … WHERE published_at IS NULL ORDER BY id
-├─ send each to Kafka                    wait for its acknowledgement before sending the next
-├─ mark them published                   UPDATE outbox SET published_at = now WHERE id IN (…)
-└─ commit, which releases the lock ◄── any failure rolls back, and the batch is sent again later
-```
-
-- **Transactional outbox.** The message is written in the transaction that records the transaction, so
-  both are committed or neither is. Kafka is never called inside that transaction: recording does not wait
-  for Kafka, and keeps working while it is down.
-- **A relay publishes the outbox.** Every instance runs it every 200 ms. A run starts by locking the one
-  row of `outbox_publisher` with `SELECT … FOR UPDATE SKIP LOCKED`; when another instance holds it, the
-  run does nothing. The holder reads up to 100 messages not published yet, publishes them one by one in
-  the order of their outbox id, waiting for Kafka's acknowledgement of each before sending the next, then
-  marks them published and commits. A message is picked by its `published_at` flag, not as "after the
-  last id published": ids are taken at insert, not at commit, so a later id can commit first and would
-  be skipped. A send that fails, or is not taken and acknowledged within 5 seconds each, rolls the run
-  back, and the batch is sent again by a later run. When the publishing instance dies, MySQL releases its
-  lock with its connection and another instance takes over. An instance that hangs without dying, cut off
-  from MySQL while its connection stays open, keeps the lock, and nobody publishes until MySQL drops that
-  connection; a lease that expires would fix it (see Improvements).
-- **Why one publisher and one partition.** Transactions that share an account are applied one after the
-  other (they lock the account), and each inserts its message while it holds that lock, so their outbox
-  ids follow the order they were applied in. A reversal is recorded only after its original was
-  committed. Publishing in outbox id order, from one instance at a time, to a topic with one partition
-  hands consumers that same order; two publishers at once, or several partitions, would interleave it.
-  The price is throughput: one partition is read by one consumer of a group, and the relay publishes about
-  600 messages a second (1,000 in 1.6 s, measured locally). Since it sends one message at a time, the
-  producer does not wait to fill a batch (`linger.ms: 0`; with Kafka's default of 5 ms it was 170 a second).
-
-What a consumer can rely on:
-
-| | |
-|---|---|
-| **Can it miss a transaction?** | No. A committed transaction always has its message in the outbox, and the message stays there until Kafka has acknowledged it. A refused transaction is never announced. |
-| **Can it see one twice?** | Yes, rarely: a relay that dies, or fails, after Kafka acknowledged a message but before it marked it published sends it again. The copy is identical (same key and body), so consumers deduplicate on the transaction id, which is also the message key. |
-| **In what order?** | Two transactions that touch the same account arrive in the order they were applied to it, and a reversal always arrives after the transaction it reverses. Transactions with no account in common may arrive in either order. A copy always repeats a message that already arrived, so once copies are dropped the order still holds. |
-| **What if the service crashes right after recording one?** | The transaction and its message were committed together, so the message waits in the outbox; any other instance (or the same one once restarted) publishes it within a relay run. If Kafka is down, messages wait in the outbox and are published, in order, once it is back. |
-
-## Statement and past balances
-
-- **The statement** (`GET /v1/accounts/{accountId}/entries`) lists an account's entries newest first, each with the
-  account's balance right after it. `nextCursor` is the id of the page's last entry, and the next page holds the
-  entries before it (`id < cursor`). On one account, ids follow the order in which transactions commit: an entry is
-  inserted while its transaction holds the account's lock, until it commits. So a cursor never skips an entry or
-  shows one twice.
-- **The balance at a past instant** (`GET /v1/accounts/{accountId}/balance?asOf=…`) is the `balanceAfter` of the
-  account's last entry whose transaction was recorded at or before `asOf`, and zero before its first entry.
-  `recordedAt` comes from the clock of the instance that records the transaction, so the instances' clocks are
-  expected to be kept in sync (NTP). A skew of a few milliseconds can misplace a transaction recorded right at
-  `asOf`.
-- **No new table or index.** Both read the index on `entries.account_id`, which InnoDB extends with the entry id.
-  A past balance walks back through the entries recorded after `asOf`, so it slows down for an old instant on a
-  busy account. Copying the time onto each entry, with an index on `(account_id, recorded_at)`, would turn it into
-  a single look-up.
-
-## Following a request
-
-A request's `X-Request-Id`, or a settled payment's `paymentId`, follows it through the logs and into the announcement
-it causes:
-
-```
-… [trace-42] … c.c.ledger.service.TransactionService : Recorded transaction 3f1c…
-… [] …         c.c.ledger.service.OutboxRelay        : Announced transaction 3f1c… (correlation id trace-42)
-```
-
-- `RequestIdFilter` keeps the client's `X-Request-Id` when it is 1 to 100 letters, digits or `-_.:`; otherwise (missing,
-  or a line break that would forge a log line) it generates a UUID. The response carries the id used.
-- The id sits in the logging context (MDC) only while its thread handles the request or the payment message.
-  `OutboxService.add` stores it with the message, and the relay publishes it as the Kafka header `correlationId`.
-- A retry answered from the idempotency store announces nothing, so an announcement carries the id of the request that
-  took effect.
-- A payment-settled message that fails is logged at every delivery with its place and the reason
-  (`payment-settled-1@42 failed on delivery 3: …`); Spring Kafka alone logs no reason.
-- **Few log lines, on purpose, to keep the code simple.** The ledger logs only where a transaction is recorded
-  (`TransactionService`), where it is announced (`OutboxRelay`) and where a payment message fails. There is no line per
-  HTTP request, so a read, a refused request or a retry answered from the store shows its id only on the response.
-
-## Persistence decisions
-
-- The schema is owned by Liquibase changelogs written as formatted SQL, so the constraints the
-  ledger relies on are explicit and reviewable.
-- Hibernate only validates the schema (`ddl-auto: validate`); it never creates or changes it.
-- `open-in-view` is off: entities never leave a service transaction.
-- Money is `DECIMAL(19, 4)`: exact, and room for 15 integer digits.
-- Accounts and transactions have UUIDs: they are public identifiers, so they must not be guessable
-  or reveal volumes. Entries are internal and keep an auto-increment id (which also means Hibernate
-  inserts them one by one, without JDBC batching).
-- Transactions and entries are `@Immutable`: Hibernate never issues an `UPDATE` for them.
-- Recording a transaction locks its accounts (`SELECT … FOR UPDATE`, always in id order) until the
-  database transaction commits: the rules are checked against balances nobody else can change, and
-  two transactions on the same accounts in opposite directions cannot deadlock.
-- A transaction keeps its currency (all its entries share one), so it can be shown without reading
-  its accounts.
-- A reversal is a new transaction whose `reversal_of` points at the original, and a `UNIQUE` index on
-  that column makes "reversed at most once" a database guarantee. Reversing first locks the original's
-  accounts and only then looks for an existing reversal, under `READ COMMITTED`: two reversals of the
-  same transaction sent at once queue on those locks, the second one sees the first and is refused with
-  `409`, and the index never has to be the one that says no.
-- Each entry keeps the balance of its account right after it, in the order of the request. An account
-  posted to twice in one transaction may show an intermediate value below its limit; the overdraft
-  rule is judged on the account's net change, since the transaction is applied all at once.
-- The ledger's own settlement accounts are created by the migration, one per currency, with no
-  overdraft limit and a random id; nothing in the code knows their ids. The ledger finds the one of a
-  currency as the account with `unlimited_overdraft` in that currency (indexed, since every settled
-  payment looks it up), and no request can open such an account. To see their ids:
-  `SELECT id, currency FROM accounts WHERE unlimited_overdraft`. The PDF names only EUR and JPY; USD
-  gets one too, since the ledger supports it and a USD payment needs it.
-
-## Correct under pressure
-
-The ledger runs on several instances that share nothing but MySQL, so every guarantee rests on the
-database, never on the JVM. Each one is proven against a real MySQL (Testcontainers), and every
-race between requests runs five times:
-
-| Guarantee | Test |
-|---|---|
-| No account past its overdraft limit, no lost update, no deadlock when money moves A → B and B → A at once, a transaction reversed at most once, with the requests split across two instances | `ConcurrentTransactionsShould` |
-| Every currency adds up to zero and every balance equals the sum of its entries: checked again and again while 200 transactions and reversals race on two instances, and once more at the end | `LedgerIntegrityShould` |
-| A request sent again with the same `Idempotency-Key` takes effect once: copies sent at once, to one instance or to both, and a first attempt that dies before its commit | `ConcurrentRetriesShould`, `ConcurrentTransactionsShould`, `IdempotencyServiceShould` |
-| A request kept waiting on a locked account is answered `503` after 5 seconds and records nothing, while requests on other accounts are still served | `BusyAccountShould` |
-| A refused transaction leaves nothing behind, and is not announced | `TransactionApiShould`, `TransactionAnnouncementsShould` |
-| Every transaction is announced, once and in the order it was applied, when both instances record transactions and reversals and both run the relay | `ConcurrentAnnouncementsShould` |
-| A committed transaction is announced even when Kafka is down while it is recorded, or the instance publishing the outbox dies first; a publisher that dies after sending sends an identical copy | `OutboxRelayShould` |
-| A settled payment is recorded once, whether it arrives again under the same or a new event id, on one instance or on both at once, or after an instance recorded it and died before committing its offset | `PaymentSettledConsumerShould`, `ConcurrentPaymentsShould` |
-| A payment-settled message the ledger cannot record goes unchanged to the dead-letter topic, leaves nothing behind and does not hold up the messages after it; one that fails for another reason (a locked account) is retried until it is recorded | `PaymentSettledConsumerShould` |
-
-- **Two instances in the tests**: the second instance is a second Spring Boot application started
-  in the same JVM, with its own connection pool, its own Hibernate, its own outbox relay and its own
-  `payment-settled` consumer in the same consumer group, connected to the same MySQL and Kafka. Like two
-  containers, the two instances share only the database and the broker.
-- **Lock waits**: MySQL waits 50 seconds for a row lock by default; the ledger sets 5
-  (`innodb_lock_wait_timeout`, on every connection). A request that waits longer, or that MySQL
-  picks as the victim of a deadlock (none is expected: a transaction locks all its accounts in one
-  statement, in id order), is rolled back and answered `503 ACCOUNT_BUSY` with `Retry-After: 1`. The ledger does not
-  retry by itself: on a busy account a retry only makes the queue longer, and the client can retry
-  safely with the same `Idempotency-Key`. A copy of a request waiting for its first attempt on the
-  idempotency key's lock waits under the same 5 seconds, so when that attempt is held up by busy
-  accounts, the copy is answered `503` too.
-- **Connection pool**: a request keeps its database connection while it waits for a lock, so
-  requests piling up on one busy account can hold every connection of the pool. The 5-second lock
-  wait gives each of them back well before the 30 seconds Hikari lets a request wait for a
-  connection, so a burst on one account delays requests on other accounts by seconds instead of
-  failing them. A flood that never stops on one account would still starve the others; splitting
-  the settlement account is in Improvements. The pool keeps Hikari's default of 10 connections per
-  instance: size it to the requests an instance serves at once, and keep instances × pool size below
-  MySQL's `max_connections` (151 by default).
-- **Largest balance**: amounts and balances are `DECIMAL(19, 4)`, with 15 integer digits. A larger
-  amount in a request is refused with `400`. A balance gets there only after a quadrillion has piled
-  up; MySQL then refuses the update and the whole transaction is rolled back (`500`, nothing
-  recorded).
-- **Isolated tests**: before each integration test, `@IntegrationTest` empties the ledger and runs the
-  settlement accounts' migration again, so the checks over the whole ledger see only the test's own data.
-  It first takes the outbox publisher's lock, so a relay run still publishing the previous test's
-  messages finishes before the outbox is emptied, and a test reads only the announcements it caused.
-
-This README is completed as the service is built (API, design decisions, guarantees for consumers,
-improvements).
-
-## AI usage
-
-See [AI_USAGE.md](AI_USAGE.md).
+How I used AI and how I checked its work: [AI_USAGE.md](AI_USAGE.md).
 
 ## Improvements
 
-- **More partitions, for more consumers, when traffic grows.** The `transaction-recorded` topic has one
-  partition so that consumers get transactions in the order they were applied: Kafka orders messages only
-  within a partition, and one partition is read by one consumer of a group. When one consumer can no
-  longer keep up, the topic can be split, but the key then decides what stays in order:
-  - *by merchant* (all of a merchant's events in one partition): the ledger would first have to know which
-    accounts belong to which merchant, and the order still breaks for a transaction that touches two
-    merchants (a transfer between them lands in one merchant's partition only) and for the ledger's own
-    accounts (Settlement EUR is in every EUR payment, so its events spread over every partition);
-  - *by the original transaction* (`reversalOf` for a reversal, its own id otherwise): a reversal still
-    arrives after its original, but two transactions on the same account may swap;
-  - *one message per entry, keyed by account*: every account, Settlement included, keeps its order; a
-    transaction becomes several messages, which a consumer joins by transaction id. This is the one that
-    keeps today's promise per account.
+What I would change before production, going through the challenge's requirements.
 
-  Whatever the key, the relay still publishes from one instance at a time, in outbox order (two publishers
-  would race within a partition), so more partitions do not publish faster; sending in batches would. The
-  number of partitions is chosen up front: adding partitions to a live topic moves keys to other
-  partitions and breaks their order while it happens, so the clean way is a new topic.
+**Model and amounts**
+- `1e2147483647` overflows Hibernate Validator's `@Digits`: the API answers `500` instead of `400`, and a payment with
+  it is retried forever, holding up its partition. `@DecimalMax("999999999999999.9999")` next to `@Digits` refuses it.
+- A balance past 15 integer digits is refused by MySQL: `500` for a request, endless retries for a payment.
+- Amounts are compared as written: a payment sent again as `10.0` instead of `10.00` is dead-lettered as a different
+  request. Comparing them at the currency's scale would accept it.
+
+**Settled payments**
+- A message that fails every time for a bug stops its partition: alert on the lag of the consumer group `ledger`.
+- Re-sending from `payment-settled-dlt` is manual (the script, same `paymentId`): a tool to replay chosen messages.
+- The topics belong to the payment system; the ledger creates them only for the demo.
+
+**Announcements**
+- Duplicates during a Kafka outage: let the producer give up itself (`delivery.timeout.ms`) instead of the relay's
+  5-second timeout, so a send the relay gave up on is never delivered later.
+- Published rows stay in the outbox: delete them after a few days.
+- One message at a time, about 600 a second: send in batches with the idempotent producer. A message Kafka always
+  refuses stops the queue.
+- A publisher that hangs without dying keeps the lock until MySQL drops its connection: a lease that expires instead.
+- Metrics and alerts: messages not published, the age of the oldest. Reading the binlog (Debezium) instead of polling.
+- More partitions for more consumers: one message per entry, keyed by account, keeps the order per account. The count
+  is chosen up front, since adding partitions to a live topic breaks the order.
+
+**Under pressure**
+- Every payment in a currency queues on its settlement account: split it into several rows, summed for its balance.
+- Idempotency keys never expire (the contract promises at least 24 hours): a `reserved_at` column and a purge job.
+- `POST /v1/accounts` can answer `503` when a retry waits too long on its key; the contract does not list it.
+
+**Entries, past balances and tracing**
+- `recordedAt` is the recording instance's clock: a skew can misplace a transaction right at an `asOf`. MySQL's clock,
+  read under the accounts' lock, would not.
+- A past balance on a busy account reads every entry after `asOf`: copy the time onto entries, indexed with the account.
+- Declare `X-Request-Id` on every response in `docs/openapi.yaml`, so the contract tests check it everywhere.
+
+**Running and deploying**
+- `.gitattributes` keeps LF only for `mvnw`: with Git for Windows' default `core.autocrlf`, `run.sh` gets CRLF and
+  fails. `*.sh text eol=lf` fixes it.
+- Spring profiles per environment (`application-prod.yml`), with secrets outside `docker-compose.yml`.
+- Expand/contract migrations, so two versions run side by side during a deploy; stored idempotent answers must stay
+  readable too (those stored before `currency` was added to `Transaction` lack it).
+- A crash during a migration leaves Liquibase's lock taken: release it as part of the deploy.
+- In CI: oasdiff for breaking API changes, the AsyncAPI CLI on `docs/asyncapi.yaml` (never run yet), a dependency scan.
+- Time-ordered UUIDs (version 7) as `BINARY(16)`: smaller indexes, inserted in order.
+
+**Security** (not implemented: the challenge does not ask for it)
+- Authentication: every caller, internal service or merchant, identifies itself.
+- Authorization: a merchant reads only its own accounts and cannot move another merchant's money (`403`); payouts,
+  fees, reversals and the settlement accounts are for internal services only.
+- Idempotency keys per caller (caller + key) instead of global, as the IETF idempotency-key draft recommends.
+- Kafka with TLS and ACLs: only the payment system may publish `payment-settled`.
+- Log injection: a `paymentId` may hold a line break and reaches the logs; restrict it like `X-Request-Id`, or log JSON.
+- Already in place: DTOs separate from entities, parameterised queries, at most 100 entries per transaction, bounded
+  amounts, no stack traces in errors, random UUIDs, locks against races, idempotency against replays.
