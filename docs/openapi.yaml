@@ -24,9 +24,9 @@ info:
       `Idempotency-Key`.
     - The version is in the path. Within `v1` changes are additive only (new endpoints, new
       optional fields, new error codes); clients must ignore fields they do not know.
-    - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
-      returns it on the response, writes it in its logs and in the announcements the request
-      causes, so one request can be followed end to end.
+    - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing or
+      invalid, returns it on the response, writes it in its logs and in the `correlationId` header of
+      the announcement the request causes, so one request can be followed end to end.
     - Every recorded transaction, reversals included, is announced on Kafka as a
       `transaction-recorded` message; its contract is docs/asyncapi.yaml.
 servers:
@@ -284,10 +284,14 @@ components:
       name: X-Request-Id
       in: header
       required: false
-      description: Correlates this request with the ledger's logs and announcements.
+      description: |
+        Correlates this request with the ledger's logs and announcements. A missing value, or one with
+        more than 100 characters or with characters other than letters, digits and `-_.:`, is replaced
+        by a generated UUID; the response's `X-Request-Id` carries the value used.
       schema:
         type: string
         maxLength: 100
+        pattern: '^[A-Za-z0-9._:-]+$'
 
   headers:
     Location:

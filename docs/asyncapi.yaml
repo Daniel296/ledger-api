@@ -27,6 +27,7 @@ info:
       back-off growing from 2 to 30 seconds, until it succeeds; the messages behind it on the same
       partition wait. Such a message is never dead-lettered.
     - Unknown fields are ignored.
+    - The transaction is announced with the `paymentId` as its `correlationId` header.
 
     ## transaction-recorded (published)
 
@@ -215,6 +216,15 @@ components:
       name: transaction-recorded
       title: Transaction recorded
       contentType: application/json
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+            maxLength: 200
+            description: |
+              The `X-Request-Id` of the REST request that recorded the transaction, or the `paymentId` of the
+              payment-settled message; the ledger's logs show the same value.
       payload:
         $ref: './openapi.yaml#/components/schemas/Transaction'
       bindings:
