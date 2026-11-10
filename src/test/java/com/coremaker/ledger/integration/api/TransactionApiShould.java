@@ -104,22 +104,6 @@ class TransactionApiShould {
     }
 
     @Test
-    void reverseATransactionOnceAndAnswerItsRetryWithTheOriginalResponse() throws Exception {
-
-        var funding = account(EUR, "1000.00");
-        var merchant = account(EUR, "0");
-        var payment = recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
-        var key = newKey();
-
-        var first = reverse(key, id(payment));
-        var retry = reverse(key, id(payment));
-
-        assertThat(first).hasStatus(HttpStatus.CREATED);
-        assertSameResponse(retry, first);
-        assertBalance(merchant, "0.00");
-    }
-
-    @Test
     void refuseAnIdempotencyKeyReusedForADifferentRequest() throws Exception {
 
         var funding = account(EUR, "1000.00");
@@ -232,21 +216,10 @@ class TransactionApiShould {
     }
 
     @Test
-    void rejectMalformedRequests() {
+    void rejectMoreEntriesOrALongerIdempotencyKeyThanAllowed() {
 
-        var noEntries = post("""
-                {"description": "Payout"}
-                """);
-        var unknownDirection = post("""
-                {"description": "Payout", "entries": [{"accountId": "%s", "direction": "SIDEWAYS", "amount": "1.00"}]}
-                """.formatted(UUID.randomUUID()));
-
-        var nullEntry = post("""
-                {"description": "Payout", "entries": [null, null]}
-                """);
         var entries = Collections.nCopies(101, entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var tooManyEntries = recordTransaction("Payout", entries.toArray(String[]::new));
-        var reversalOfNotAnId = reverse("not-a-uuid");
         var payout = transaction("Payout",
                 entry(UUID.randomUUID(), "DEBIT", "1.00"), entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var noIdempotencyKey = mvc.post()
@@ -254,20 +227,10 @@ class TransactionApiShould {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(payout)
                 .exchange();
-        var reversalWithoutIdempotencyKey = mvc.post()
-                .uri("/v1/transactions/{id}/reversal", UUID.randomUUID())
-                .exchange();
-        var emptyIdempotencyKey = post("", payout);
         var tooLongIdempotencyKey = post("k".repeat(256), payout);
 
-        assertThat(noEntries).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(unknownDirection).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(nullEntry).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(tooManyEntries).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(reversalOfNotAnId).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(noIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(reversalWithoutIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(emptyIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(tooLongIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
     }
 

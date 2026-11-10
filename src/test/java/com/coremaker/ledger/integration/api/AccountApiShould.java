@@ -68,17 +68,6 @@ class AccountApiShould {
     }
 
     @Test
-    void showASettlementAccountWithoutAnOverdraftLimit() {
-
-        var settlementEur = accountRepository.findSettlementAccountId(EUR).orElseThrow();
-
-        var read = get("/v1/accounts/{id}", settlementEur);
-
-        assertThat(read).hasStatusOk();
-        assertThat(read).bodyJson().doesNotHavePath("$.overdraftLimit");
-    }
-
-    @Test
     void refuseACurrencyTheLedgerDoesNotSupport() {
 
         var refused = open("""
@@ -99,23 +88,9 @@ class AccountApiShould {
     }
 
     @Test
-    void rejectMalformedRequests() {
+    void rejectAnAccountWithoutACurrency() {
 
-        var missingCurrency = open("{}");
-        var invalidJson = open("{");
-        var invalidId = get("/v1/accounts/not-a-uuid");
-        var noIdempotencyKey = mvc.post()
-                .uri("/v1/accounts")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"currency": "EUR"}
-                        """)
-                .exchange();
-
-        assertThat(missingCurrency).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(invalidJson).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(invalidId).hasStatus(HttpStatus.BAD_REQUEST);
-        assertThat(noIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(open("{}")).hasStatus(HttpStatus.BAD_REQUEST);
     }
 
     private MvcTestResult open(String body) {

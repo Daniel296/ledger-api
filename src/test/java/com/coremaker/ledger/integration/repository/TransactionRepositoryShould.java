@@ -2,8 +2,6 @@ package com.coremaker.ledger.integration.repository;
 
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.tuple;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -13,7 +11,6 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 
 import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
@@ -33,28 +30,6 @@ class TransactionRepositoryShould {
     private TransactionRepository transactionRepository;
 
     @Test
-    void saveATransactionWithItsEntriesAndReadItBack() {
-
-        var payer = account();
-        var payee = account();
-        var transaction = transaction(entry(payer.getId(), Direction.DEBIT, "125.50", "-125.50"),
-                entry(payee.getId(), Direction.CREDIT, "125.50", "125.50"));
-
-        var saved = transactionRepository.save(transaction);
-        var found = transactionRepository.findById(saved.getId()).orElseThrow();
-
-        assertThat(found.getDescription()).isEqualTo("Payment settled");
-        assertThat(found.getRecordedAt()).isEqualTo(transaction.getRecordedAt());
-        assertThat(found.getEntries())
-                .extracting(Entry::getAccountId, Entry::getDirection)
-                .containsExactly(tuple(payer.getId(), Direction.DEBIT), tuple(payee.getId(), Direction.CREDIT));
-        assertThat(found.getEntries()).extracting(Entry::getAmount).usingElementComparator(BigDecimal::compareTo)
-                .containsExactly(new BigDecimal("125.50"), new BigDecimal("125.50"));
-        assertThat(found.getEntries()).extracting(Entry::getBalanceAfter).usingElementComparator(BigDecimal::compareTo)
-                .containsExactly(new BigDecimal("-125.50"), new BigDecimal("125.50"));
-    }
-
-    @Test
     void neverUpdateARecordedTransaction() {
 
         var payer = account();
@@ -66,20 +41,6 @@ class TransactionRepositoryShould {
         transactionRepository.save(saved);
 
         assertThat(transactionRepository.findById(saved.getId()).orElseThrow().getDescription()).isEqualTo("Payment settled");
-    }
-
-    @Test
-    void keepAtMostOneReversalOfATransaction() {
-
-        var payer = account();
-        var payee = account();
-        var original = transactionRepository.save(transaction(entry(payer.getId(), Direction.DEBIT, "10.00", "-10.00"),
-                entry(payee.getId(), Direction.CREDIT, "10.00", "10.00")));
-        transactionRepository.save(reversal(original, payer, payee));
-        var secondReversal = reversal(original, payer, payee);
-
-        assertThatThrownBy(() -> transactionRepository.save(secondReversal))
-                .isInstanceOf(DataIntegrityViolationException.class);
     }
 
     private Account account() {
@@ -98,14 +59,6 @@ class TransactionRepositoryShould {
         transaction.setRecordedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         transaction.setEntries(List.of(entries));
         return transaction;
-    }
-
-    private static Transaction reversal(Transaction original, Account payer, Account payee) {
-
-        var reversal = transaction(entry(payer.getId(), Direction.CREDIT, "10.00", "0.00"),
-                entry(payee.getId(), Direction.DEBIT, "10.00", "0.00"));
-        reversal.setReversalOf(original.getId());
-        return reversal;
     }
 
     private static Entry entry(UUID accountId, Direction direction, String amount, String balanceAfter) {

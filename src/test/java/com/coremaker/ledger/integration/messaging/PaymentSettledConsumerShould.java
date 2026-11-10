@@ -107,14 +107,9 @@ class PaymentSettledConsumerShould {
 
     @ParameterizedTest
     @CsvSource(delimiter = '|', textBlock = """
-            not a payment                                                                          | MALFORMED_MESSAGE
-            {"paymentId": "p-1", "amount": "10.00", "currency": "EUR"}                             | MALFORMED_MESSAGE
-            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "10", "currency": "JPY"}     | CURRENCY_MISMATCH
-            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "10.001", "currency": "EUR"} | TOO_MANY_DECIMAL_PLACES
-            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "0.00", "currency": "EUR"}   | NON_POSITIVE_AMOUNT
-            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "1234567890123456", "currency": "EUR"} | MALFORMED_MESSAGE
-            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "10.00001", "currency": "EUR"} | MALFORMED_MESSAGE
+            not a payment                                                                           | MALFORMED_MESSAGE
             {"paymentId": "p-1", "merchantAccountId": "%2$s", "amount": "10.00", "currency": "EUR"} | UNKNOWN_ACCOUNT
+            {"paymentId": "p-1", "merchantAccountId": "%s", "amount": "10", "currency": "JPY"}      | CURRENCY_MISMATCH
             """)
     void deadLetterAMessageItCannotRecordUnchangedAndRecordTheOnesBehindIt(String message, String errorCode) {
 

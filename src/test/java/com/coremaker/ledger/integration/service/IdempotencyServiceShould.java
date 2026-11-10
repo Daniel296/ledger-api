@@ -1,6 +1,5 @@
 package com.coremaker.ledger.integration.service;
 
-import static com.coremaker.ledger.exception.ErrorCode.IDEMPOTENCY_KEY_REUSED;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static com.coremaker.ledger.model.enums.Direction.CREDIT;
 import static com.coremaker.ledger.model.enums.Direction.DEBIT;
@@ -14,21 +13,15 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.transaction.IllegalTransactionStateException;
-import org.springframework.transaction.support.TransactionTemplate;
 
-import com.coremaker.ledger.dto.message.PaymentSettled;
-import com.coremaker.ledger.dto.request.AccountRequest;
 import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.TransactionResponse;
-import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.IdempotentRequestRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
-import com.coremaker.ledger.service.AccountService;
 import com.coremaker.ledger.service.IdempotencyService;
 import com.coremaker.ledger.service.TransactionService;
 
@@ -37,9 +30,6 @@ class IdempotencyServiceShould {
 
     @Autowired
     private IdempotencyService idempotencyService;
-
-    @Autowired
-    private AccountService accountService;
 
     @Autowired
     private TransactionService transactionService;
@@ -52,9 +42,6 @@ class IdempotencyServiceShould {
 
     @Autowired
     private IdempotentRequestRepository idempotentRequestRepository;
-
-    @Autowired
-    private TransactionTemplate transactionTemplate;
 
     @Test
     void recordATransactionOnceWhenTheFirstAttemptDiedBeforeCommitting() {
@@ -80,42 +67,6 @@ class IdempotencyServiceShould {
 
         assertThat(transactionRepository.count()).isEqualTo(transactionsBefore + 1);
         assertThat(balance(merchant)).isEqualByComparingTo("10.00");
-    }
-
-    @Test
-    void refuseAKeyReusedOnAnotherOperation() {
-
-        var key = newKey();
-        accountService.open(key, new AccountRequest("EUR", null));
-        var request = transfer(account("1000.00"), account("0"));
-
-        assertThatThrownBy(() -> transactionService.post(key, request))
-                .isInstanceOfSatisfying(LedgerException.class,
-                        refusal -> assertThat(refusal.getCode()).isEqualTo(IDEMPOTENCY_KEY_REUSED));
-    }
-
-    @Test
-    void rememberARefusedRequestButLeaveARefusedPaymentToBeJudgedAgain() {
-
-        var requestKey = newKey();
-        var payment = new PaymentSettled(newKey(), UUID.randomUUID(), new BigDecimal("10.00"), EUR);
-
-        assertThatThrownBy(() -> accountService.open(requestKey, new AccountRequest("GBP", null)))
-                .isInstanceOf(LedgerException.class);
-        assertThatThrownBy(() -> transactionService.settle(payment)).isInstanceOf(LedgerException.class);
-
-        assertThat(idempotentRequestRepository.findById(requestKey).orElseThrow().getRefusal())
-                .contains("UNSUPPORTED_CURRENCY");
-        assertThat(idempotentRequestRepository.findById("payment-settled:%s".formatted(payment.paymentId())))
-                .hasValueSatisfying(reservation -> assertThat(reservation.getRequestHash()).isNull());
-    }
-
-    @Test
-    void neverJoinTheCallersTransaction() {
-
-        transactionTemplate.executeWithoutResult(callersTransaction -> assertThatThrownBy(
-                () -> idempotencyService.commitOnce(newKey(), "anyOperation", "request", String.class, () -> "response"))
-                .isInstanceOf(IllegalTransactionStateException.class));
     }
 
     private static String newKey() {

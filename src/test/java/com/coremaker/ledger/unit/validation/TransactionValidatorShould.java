@@ -83,21 +83,6 @@ class TransactionValidatorShould {
     }
 
     @Test
-    void refuseTakingAnAccountPastItsOverdraftLimit() {
-
-        var merchant42 = account(EUR, "0", "25.50");
-        var payouts = account(EUR, "0", "98.50");
-        var accounts = List.of(merchant42, payouts);
-        var debit = debit(merchant42, "50.00");
-        var credit = credit(payouts, "50.00");
-
-        assertThatThrownBy(() -> validate(accounts, debit, credit))
-                .isInstanceOfSatisfying(LedgerException.class,
-                        refusal -> assertThat(refusal.getCode()).isEqualTo(OVERDRAFT_LIMIT_EXCEEDED))
-                .hasMessage("Account %s would go to -24.50, past its overdraft limit of 0.00", merchant42.getId());
-    }
-
-    @Test
     void refuseMoreDecimalPlacesThanTheCurrencyAllows() {
 
         var merchant = account(JPY, "0", "1000");

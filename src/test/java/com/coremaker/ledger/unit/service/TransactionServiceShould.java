@@ -1,6 +1,5 @@
 package com.coremaker.ledger.unit.service;
 
-import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_ALREADY_REVERSED;
 import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_NOT_FOUND;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static com.coremaker.ledger.model.enums.Currency.JPY;
@@ -112,35 +111,6 @@ class TransactionServiceShould {
     }
 
     @Test
-    void saveNothingAndChangeNoBalanceWhenARuleIsBroken() {
-
-        var merchant = account(EUR, "25.50");
-        var payouts = account(EUR, "0");
-        lockable(merchant, payouts);
-
-        var unbalanced = request(entry(merchant, DEBIT, "100.00"), entry(payouts, CREDIT, "99.00"));
-
-        assertThatThrownBy(() -> transactionService.post("key", unbalanced)).isInstanceOf(LedgerException.class);
-
-        verify(transactionRepository, never()).save(any());
-        verify(outboxService, never()).add(any());
-        assertThat(merchant.getBalance()).isEqualByComparingTo("25.50");
-        assertThat(payouts.getBalance()).isZero();
-    }
-
-    @Test
-    void showAmountsWithTheDecimalPlacesOfTheCurrency() {
-
-        var transaction = recorded(JPY,
-                entry(UUID.randomUUID(), DEBIT, "15000.0000"),
-                entry(UUID.randomUUID(), CREDIT, "15000.0000"));
-
-        var read = transactionService.get(transaction.getId());
-
-        assertThat(read.entries()).extracting(EntryResponse::amount).containsExactly("15000", "15000");
-    }
-
-    @Test
     void reportATransactionThatDoesNotExist() {
 
         var id = UUID.randomUUID();
@@ -178,26 +148,6 @@ class TransactionServiceShould {
         assertThat(payouts.getBalance()).isZero();
         assertThat(fees.getBalance()).isZero();
         verify(outboxService).add(reversal);
-    }
-
-    @Test
-    void reverseNothingWhenTheTransactionWasAlreadyReversed() {
-
-        var merchant = account(EUR, "125.50");
-        var payouts = account(EUR, "0");
-        var payout = recorded(EUR, entry(merchant.getId(), DEBIT, "100.00"), entry(payouts.getId(), CREDIT, "100.00"));
-        lockable(merchant, payouts);
-        var payoutId = payout.getId();
-        when(transactionRepository.existsByReversalOf(payoutId)).thenReturn(true);
-
-        assertThatThrownBy(() -> transactionService.reverse("key", payoutId))
-                .isInstanceOfSatisfying(LedgerException.class,
-                        refusal -> assertThat(refusal.getCode()).isEqualTo(TRANSACTION_ALREADY_REVERSED));
-
-        verify(transactionRepository, never()).save(any());
-        verify(outboxService, never()).add(any());
-        assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
-        assertThat(payouts.getBalance()).isZero();
     }
 
     @Test

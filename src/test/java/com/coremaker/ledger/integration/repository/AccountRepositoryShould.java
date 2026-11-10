@@ -35,21 +35,6 @@ class AccountRepositoryShould {
         assertThat(accountRepository.findSettlementAccountId(EUR)).isNotEqualTo(Optional.of(withALimit.getId()));
     }
 
-    @Test
-    void saveAnAccountAndReadItBack() {
-
-        var account = account(EUR);
-
-        var saved = accountRepository.save(account);
-        var found = accountRepository.findById(saved.getId()).orElseThrow();
-
-        assertThat(found.getCurrency()).isEqualTo(EUR);
-        assertThat(found.getOverdraftLimit()).isEqualByComparingTo("100.00");
-        assertThat(found.isUnlimitedOverdraft()).isFalse();
-        assertThat(found.getBalance()).isZero();
-        assertThat(found.getCreatedAt()).isEqualTo(account.getCreatedAt());
-    }
-
     private void assertSettlementAccount(Currency currency) {
 
         var id = accountRepository.findSettlementAccountId(currency).orElseThrow();

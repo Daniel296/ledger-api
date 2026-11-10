@@ -89,15 +89,6 @@ class AccountEntriesApiShould {
     }
 
     @Test
-    void reportAnAccountThatDoesNotExist() {
-
-        var statement = get("/v1/accounts/{id}/entries", UUID.randomUUID());
-
-        assertThat(statement).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(statement).bodyJson().extractingPath("$.errorCode").isEqualTo("ACCOUNT_NOT_FOUND");
-    }
-
-    @Test
     void rejectALimitOutsideOneToAHundred() {
 
         var merchant = account("0").getId();

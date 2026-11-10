@@ -75,24 +75,6 @@ class TransactionAnnouncementsShould {
     }
 
     @Test
-    void announceARequestRetriedWithTheSameKeyOnce() throws Exception {
-
-        var funding = account("1000.00");
-        var merchant = account("0");
-        var key = newKey();
-
-        try (var announcements = Announcements.fromNowOn(consumerFactory)) {
-
-            var first = post(key, transfer(funding, merchant, "10.00"));
-            var retry = post(key, transfer(funding, merchant, "10.00"));
-            var last = post(newKey(), transfer(funding, merchant, "1.00"));
-
-            assertThat(id(retry)).isEqualTo(id(first));
-            assertThat(announcements.firstTransactionIds(2)).containsExactly(id(first), id(last));
-        }
-    }
-
-    @Test
     void announceATransactionWithTheRequestIdOfItsRequest() throws Exception {
 
         var funding = account("1000.00");

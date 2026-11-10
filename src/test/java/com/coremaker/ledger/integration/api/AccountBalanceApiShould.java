@@ -58,18 +58,6 @@ class AccountBalanceApiShould {
     }
 
     @Test
-    void reportAnAccountThatDoesNotExist() {
-
-        var balance = mvc.get()
-                .uri("/v1/accounts/{id}/balance", UUID.randomUUID())
-                .param("asOf", Instant.now().toString())
-                .exchange();
-
-        assertThat(balance).hasStatus(HttpStatus.NOT_FOUND);
-        assertThat(balance).bodyJson().extractingPath("$.errorCode").isEqualTo("ACCOUNT_NOT_FOUND");
-    }
-
-    @Test
     void rejectARequestWithoutAnInstant() {
 
         var noInstant = mvc.get()

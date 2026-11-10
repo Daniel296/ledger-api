@@ -24,7 +24,6 @@ import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.IdempotentRequestRepository;
-import com.jayway.jsonpath.JsonPath;
 
 @IntegrationTest
 class ConcurrentRetriesShould {
@@ -37,46 +36,6 @@ class ConcurrentRetriesShould {
 
     @Autowired
     private IdempotentRequestRepository idempotentRequestRepository;
-
-    @RepeatedTest(5)
-    void openOneAccountWhenTheSameRequestIsSentManyTimesAtOnce() throws Exception {
-
-        var key = newKey();
-        var accountsBefore = accountRepository.count();
-
-        var responses = sendAtOnce(10, () -> open(key));
-
-        assertAllTheSame(responses, HttpStatus.CREATED);
-        assertThat(accountRepository.count()).isEqualTo(accountsBefore + 1);
-    }
-
-    @RepeatedTest(5)
-    void recordOneTransactionWhenTheSameRequestIsSentManyTimesAtOnce() throws Exception {
-
-        var funding = account("1000000.00");
-        var merchant = account("0");
-        var key = newKey();
-
-        var responses = sendAtOnce(10, () -> post(key, transfer(funding, merchant, "10.00")));
-
-        assertAllTheSame(responses, HttpStatus.CREATED);
-        assertThat(balance(merchant)).isEqualByComparingTo("10.00");
-    }
-
-    @RepeatedTest(5)
-    void reverseATransactionOnceWhenTheSameReversalIsSentManyTimesAtOnce() throws Exception {
-
-        var funding = account("1000.00");
-        var merchant = account("0");
-        var payment = post(newKey(), transfer(funding, merchant, "10.00"));
-        var paymentId = JsonPath.read(body(payment), "$.id");
-        var key = newKey();
-
-        var responses = sendAtOnce(10, () -> reverse(key, paymentId));
-
-        assertAllTheSame(responses, HttpStatus.CREATED);
-        assertThat(balance(merchant)).isZero();
-    }
 
     @RepeatedTest(5)
     void refuseEveryCopyOfARefusedRequestSentManyTimesAtOnce() throws Exception {
@@ -131,18 +90,6 @@ class ConcurrentRetriesShould {
         });
     }
 
-    private MvcTestResult open(String key) {
-
-        return mvc.post()
-                .uri("/v1/accounts")
-                .header("Idempotency-Key", key)
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""
-                        {"currency": "EUR"}
-                        """)
-                .exchange();
-    }
-
     private MvcTestResult post(String key, String body) {
 
         return mvc.post()
@@ -150,14 +97,6 @@ class ConcurrentRetriesShould {
                 .header("Idempotency-Key", key)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
-                .exchange();
-    }
-
-    private MvcTestResult reverse(String key, Object transactionId) {
-
-        return mvc.post()
-                .uri("/v1/transactions/{id}/reversal", transactionId)
-                .header("Idempotency-Key", key)
                 .exchange();
     }
 

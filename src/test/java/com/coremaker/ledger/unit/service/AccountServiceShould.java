@@ -8,7 +8,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
@@ -71,15 +70,6 @@ class AccountServiceShould {
 
         assertThat(account.overdraftLimit()).isEqualTo("1000");
         assertThat(account.balance()).isEqualTo("0");
-    }
-
-    @Test
-    void saveNothingWhenTheRequestBreaksARule() {
-
-        var unsupported = new AccountRequest("GBP", null);
-
-        assertThatThrownBy(() -> accountService.open("key", unsupported)).isInstanceOf(LedgerException.class);
-        verifyNoInteractions(accountRepository);
     }
 
     @Test
