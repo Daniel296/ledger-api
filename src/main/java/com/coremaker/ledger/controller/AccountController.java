@@ -1,5 +1,6 @@
 package com.coremaker.ledger.controller;
 
+import java.time.Instant;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
@@ -9,14 +10,19 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.coremaker.ledger.dto.request.AccountRequest;
+import com.coremaker.ledger.dto.response.AccountEntriesPageResponse;
 import com.coremaker.ledger.dto.response.AccountResponse;
+import com.coremaker.ledger.dto.response.BalanceResponse;
 import com.coremaker.ledger.service.AccountService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
@@ -31,6 +37,21 @@ public class AccountController {
     public AccountResponse get(@PathVariable UUID accountId) {
 
         return accountService.get(accountId);
+    }
+
+    @GetMapping("/{accountId}/entries")
+    public AccountEntriesPageResponse getEntries(
+            @PathVariable UUID accountId,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int limit,
+            @RequestParam(required = false) Long cursor) {
+
+        return accountService.getEntries(accountId, limit, cursor);
+    }
+
+    @GetMapping("/{accountId}/balance")
+    public BalanceResponse getBalance(@PathVariable UUID accountId, @RequestParam Instant asOf) {
+
+        return accountService.getBalance(accountId, asOf);
     }
 
     @PostMapping

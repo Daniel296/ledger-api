@@ -81,6 +81,7 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
 - **`X-Request-Id`** (optional, generated when missing) is returned on the response and carried into
   the logs and the announcements a request causes.
 - **Entries are paged by cursor**, not offset, so entries recorded meanwhile never shift a page.
+  See [Statement and past balances](#statement-and-past-balances).
 
 ## Idempotency
 
@@ -228,6 +229,23 @@ What a consumer can rely on:
 | **Can it see one twice?** | Yes, rarely: a relay that dies, or fails, after Kafka acknowledged a message but before it marked it published sends it again. The copy is identical (same key and body), so consumers deduplicate on the transaction id, which is also the message key. |
 | **In what order?** | Two transactions that touch the same account arrive in the order they were applied to it, and a reversal always arrives after the transaction it reverses. Transactions with no account in common may arrive in either order. A copy always repeats a message that already arrived, so once copies are dropped the order still holds. |
 | **What if the service crashes right after recording one?** | The transaction and its message were committed together, so the message waits in the outbox; any other instance (or the same one once restarted) publishes it within a relay run. If Kafka is down, messages wait in the outbox and are published, in order, once it is back. |
+
+## Statement and past balances
+
+- **The statement** (`GET /v1/accounts/{accountId}/entries`) lists an account's entries newest first, each with the
+  account's balance right after it. `nextCursor` is the id of the page's last entry, and the next page holds the
+  entries before it (`id < cursor`). On one account, ids follow the order in which transactions commit: an entry is
+  inserted while its transaction holds the account's lock, until it commits. So a cursor never skips an entry or
+  shows one twice.
+- **The balance at a past instant** (`GET /v1/accounts/{accountId}/balance?asOf=…`) is the `balanceAfter` of the
+  account's last entry whose transaction was recorded at or before `asOf`, and zero before its first entry.
+  `recordedAt` comes from the clock of the instance that records the transaction, so the instances' clocks are
+  expected to be kept in sync (NTP). A skew of a few milliseconds can misplace a transaction recorded right at
+  `asOf`.
+- **No new table or index.** Both read the index on `entries.account_id`, which InnoDB extends with the entry id.
+  A past balance walks back through the entries recorded after `asOf`, so it slows down for an old instant on a
+  busy account. Copying the time onto each entry, with an index on `(account_id, recorded_at)`, would turn it into
+  a single look-up.
 
 ## Persistence decisions
 
