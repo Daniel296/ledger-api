@@ -5,6 +5,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
@@ -13,6 +14,7 @@ import org.springframework.context.annotation.Import;
 @Retention(RetentionPolicy.RUNTIME)
 @SpringBootTest
 @AutoConfigureMockMvc
-@Import({TestcontainersConfiguration.class, OpenApiContractConfiguration.class})
+@Import({TestcontainersConfiguration.class, OpenApiContractConfiguration.class, SecondInstanceConfiguration.class})
+@ExtendWith(LedgerCleanup.class)
 public @interface IntegrationTest {
 }
