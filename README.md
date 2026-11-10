@@ -28,6 +28,22 @@ database client; 3308 avoids clashing with a local MySQL on 3306. Kafka is reach
 `kafka:9092`, a name that exists only inside the Docker network.
 Stop everything with `docker compose down` (add `-v` to also drop the database volume).
 
+To send a sample payment-settled message, as the payment system would (the script runs Kafka's console producer
+inside the Kafka container, so nothing needs to be installed):
+
+```bash
+./scripts/send-payment-settled.sh <merchantAccountId> <amount> <currency> [paymentId]
+```
+
+Every message gets a new event id; passing the `paymentId` of an earlier one sends that payment again, which the
+ledger records only once. Messages it cannot record are set aside on `payment-settled-dlt`, with the reason in their
+headers:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 \
+    --topic payment-settled-dlt --from-beginning --formatter-property print.headers=true
+```
+
 To watch the announcements of the running service:
 
 ```bash
@@ -102,6 +118,50 @@ A client that gets no answer can send the same `POST` again with the same `Idemp
   joins from a caller (it refuses to run inside one): the reads that decide anything (the key, the
   accounts) are locking reads, and a reversal needs it to see a reversal committed while it waited.
 - Keys are kept for at least 24 hours, as the contract promises; for now they are never purged.
+
+## Settled payments
+
+The payment system announces every settled payment on the Kafka topic `payment-settled`; the message contract is
+[docs/asyncapi.yaml](docs/asyncapi.yaml). Every instance consumes it, in the consumer group `ledger`, and records each
+payment as a transaction that debits the settlement account of its currency and credits the merchant's account,
+described as `Payment <paymentId> settled` and announced on `transaction-recorded` like any other:
+
+```
+payment-settled message, on any instance
+└─ PaymentSettledConsumer.consume        read the JSON: every field there and well formed, or MALFORMED_MESSAGE
+   └─ TransactionService.settle          debit the settlement account of the currency, credit the merchant
+      └─ IdempotencyService.commitOnce   key payment-settled:<paymentId>; hash of paymentId, merchant, amount, currency
+         └─ as POST /v1/transactions     lock the accounts, check the rules, save, outbox; commit
+└─ commit the offset ◄── only once the transaction is committed
+```
+
+- **Recorded once, however often it arrives.** The payment id is the idempotency key (`payment-settled:<paymentId>`;
+  keys are global, and the prefix keeps them apart from the REST clients' keys), and the request hash covers the
+  payment id, merchant, amount and currency, never the event id. A copy, under the same event id or a new one, finds
+  the stored transaction and records nothing; copies reaching two instances at once queue on the key's lock, as REST
+  retries do. A message with the same payment id but another merchant, amount or currency is not a copy: it is refused
+  with `IDEMPOTENCY_KEY_REUSED` and dead-lettered.
+- **Nothing is lost when an instance crashes.** The offset is committed only after the transaction (Spring Kafka's
+  default), so an instance that dies in between leaves the message to be delivered again, to itself or to another
+  instance, which recognizes it.
+- **A message the ledger cannot record is set aside, not lost, and does not block the ones behind it.** Malformed
+  JSON, a missing field, an unknown account, a merchant account in another currency, an amount that is not positive
+  or has too many decimals: the message goes unchanged (same key, same value) to `payment-settled-dlt`, on the same
+  partition, with the headers `errorCode` and `errorMessage`, and the consumer moves on. A refusal is not remembered,
+  so a dead-lettered payment can be sent again once its cause is fixed: for a merchant whose account was not open
+  yet, open the account and send the payment again with the same `paymentId`. The same message can land on the
+  dead-letter topic twice, when it is delivered again before its offset was committed; sending it again still
+  records it once.
+- **Any other failure is retried, never dead-lettered.** An error that is not one of the ledger's refusals (the
+  database unavailable, an account locked for longer than 5 seconds, a bug) is retried on the same message, 2, 3, 4.5
+  and up to 30 seconds apart (Spring's default back-off), until it succeeds: dead-lettering it would set aside a
+  payment that is fine. The messages behind it on that partition wait, so a bug that fails one message every time
+  stops its partition until it is fixed, which shows as consumer lag; so would a merchant balance growing past 15
+  integer digits, which MySQL refuses.
+- **Two partitions, one consumer thread per instance.** Every payment in a currency locks the same settlement account,
+  so more threads would not record faster; the two partitions let two instances share the work. The ledger creates
+  `payment-settled` and `payment-settled-dlt` at startup, for the demo; in production the payment system would own
+  them.
 
 ## Announcements
 
@@ -193,10 +253,12 @@ What a consumer can rely on:
 - Each entry keeps the balance of its account right after it, in the order of the request. An account
   posted to twice in one transaction may show an intermediate value below its limit; the overdraft
   rule is judged on the account's net change, since the transaction is applied all at once.
-- The ledger's own settlement accounts are created by the migration, with no overdraft limit and
-  fixed random ids: EUR `ffd6f25c-cbbb-43ae-afe5-1834678bb9aa`, USD
-  `91509bf3-2df9-43f8-89e3-2283c7f5a97d`, JPY `7bba09b3-74f5-4fbd-9315-25c9c98e4f94`. The PDF names
-  only EUR and JPY; USD gets one too, since the ledger supports it and a USD payment needs it.
+- The ledger's own settlement accounts are created by the migration, one per currency, with no
+  overdraft limit and a random id; nothing in the code knows their ids. The ledger finds the one of a
+  currency as the account with `unlimited_overdraft` in that currency (indexed, since every settled
+  payment looks it up), and no request can open such an account. To see their ids:
+  `SELECT id, currency FROM accounts WHERE unlimited_overdraft`. The PDF names only EUR and JPY; USD
+  gets one too, since the ledger supports it and a USD payment needs it.
 
 ## Correct under pressure
 
@@ -213,11 +275,13 @@ race between requests runs five times:
 | A refused transaction leaves nothing behind, and is not announced | `TransactionApiShould`, `TransactionAnnouncementsShould` |
 | Every transaction is announced, once and in the order it was applied, when both instances record transactions and reversals and both run the relay | `ConcurrentAnnouncementsShould` |
 | A committed transaction is announced even when Kafka is down while it is recorded, or the instance publishing the outbox dies first; a publisher that dies after sending sends an identical copy | `OutboxRelayShould` |
+| A settled payment is recorded once, whether it arrives again under the same or a new event id, on one instance or on both at once, or after an instance recorded it and died before committing its offset | `PaymentSettledConsumerShould`, `ConcurrentPaymentsShould` |
+| A payment-settled message the ledger cannot record goes unchanged to the dead-letter topic, leaves nothing behind and does not hold up the messages after it; one that fails for another reason (a locked account) is retried until it is recorded | `PaymentSettledConsumerShould` |
 
 - **Two instances in the tests**: the second instance is a second Spring Boot application started
-  in the same JVM, with its own connection pool, its own Hibernate and its own outbox relay, connected
-  to the same MySQL and Kafka. Like two containers, the two instances share only the database and the
-  broker.
+  in the same JVM, with its own connection pool, its own Hibernate, its own outbox relay and its own
+  `payment-settled` consumer in the same consumer group, connected to the same MySQL and Kafka. Like two
+  containers, the two instances share only the database and the broker.
 - **Lock waits**: MySQL waits 50 seconds for a row lock by default; the ledger sets 5
   (`innodb_lock_wait_timeout`, on every connection). A request that waits longer, or that MySQL
   picks as the victim of a deadlock (none is expected: a transaction locks all its accounts in one
