@@ -39,6 +39,7 @@ public class Transaction {
 
     private String description;
     private Instant recordedAt;
+    private UUID reversalOf;
 
     @OneToMany(cascade = CascadeType.PERSIST)
     @JoinColumn(name = "transaction_id", nullable = false, updatable = false)

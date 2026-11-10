@@ -13,4 +13,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Override
     @EntityGraph(attributePaths = "entries")
     Optional<Transaction> findById(UUID id);
+
+    boolean existsByReversalOf(UUID transactionId);
 }

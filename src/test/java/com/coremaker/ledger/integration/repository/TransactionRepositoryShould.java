@@ -2,6 +2,7 @@ package com.coremaker.ledger.integration.repository;
 
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import java.math.BigDecimal;
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import com.coremaker.ledger.integration.support.IntegrationTest;
 import com.coremaker.ledger.model.Account;
@@ -66,6 +68,20 @@ class TransactionRepositoryShould {
         assertThat(transactionRepository.findById(saved.getId()).orElseThrow().getDescription()).isEqualTo("Payment settled");
     }
 
+    @Test
+    void keepAtMostOneReversalOfATransaction() {
+
+        var payer = account();
+        var payee = account();
+        var original = transactionRepository.save(transaction(entry(payer.getId(), Direction.DEBIT, "10.00", "-10.00"),
+                entry(payee.getId(), Direction.CREDIT, "10.00", "10.00")));
+        transactionRepository.save(reversal(original, payer, payee));
+        var secondReversal = reversal(original, payer, payee);
+
+        assertThatThrownBy(() -> transactionRepository.save(secondReversal))
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
     private Account account() {
 
         var account = new Account();
@@ -82,6 +98,14 @@ class TransactionRepositoryShould {
         transaction.setRecordedAt(Instant.now().truncatedTo(ChronoUnit.MICROS));
         transaction.setEntries(List.of(entries));
         return transaction;
+    }
+
+    private static Transaction reversal(Transaction original, Account payer, Account payee) {
+
+        var reversal = transaction(entry(payer.getId(), Direction.CREDIT, "10.00", "0.00"),
+                entry(payee.getId(), Direction.DEBIT, "10.00", "0.00"));
+        reversal.setReversalOf(original.getId());
+        return reversal;
     }
 
     private static Entry entry(UUID accountId, Direction direction, String amount, String balanceAfter) {

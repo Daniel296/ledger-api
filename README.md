@@ -38,7 +38,7 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
 | `GET` | `/v1/accounts/{accountId}/balance?asOf=…` | An account's balance as at a past instant |
 | `POST` | `/v1/transactions` | Record a transaction |
 | `GET` | `/v1/transactions/{transactionId}` | Read a transaction with its entries |
-| `POST` | `/v1/transactions/{transactionId}/reversals` | Reverse a transaction |
+| `POST` | `/v1/transactions/{transactionId}/reversal` | Reverse a transaction (at most once, hence singular) |
 
 - **Amounts are decimal strings** (`"125.50"`), so no client reads them as floating point.
 - **Every `POST` needs an `Idempotency-Key`**: a retry with the same key and body gets the original
@@ -67,6 +67,11 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
   two transactions on the same accounts in opposite directions cannot deadlock.
 - A transaction keeps its currency (all its entries share one), so it can be shown without reading
   its accounts.
+- A reversal is a new transaction whose `reversal_of` points at the original, and a `UNIQUE` index on
+  that column makes "reversed at most once" a database guarantee. Reversing first locks the original's
+  accounts and only then looks for an existing reversal, under `READ COMMITTED`: two reversals of the
+  same transaction sent at once queue on those locks, the second one sees the first and is refused with
+  `409`, and the index never has to be the one that says no.
 - Each entry keeps the balance of its account right after it, in the order of the request. An account
   posted to twice in one transaction may show an intermediate value below its limit; the overdraft
   rule is judged on the account's net change, since the transaction is applied all at once.

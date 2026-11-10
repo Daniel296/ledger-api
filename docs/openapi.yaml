@@ -201,7 +201,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
 
-  /v1/transactions/{transactionId}/reversals:
+  /v1/transactions/{transactionId}/reversal:
     post:
       operationId: reverseTransaction
       summary: Reverse a transaction
@@ -209,14 +209,14 @@ paths:
         Records a new transaction with every entry of the original flipped (debit and credit
         swapped), linked to the original. A transaction can be reversed only once, and a reversal
         cannot be reversed. The reversal follows the same rules as any transaction, overdraft
-        limits included.
+        limits included. Its description is `Reversal of <transactionId>`.
       parameters:
         - $ref: '#/components/parameters/TransactionId'
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/RequestId'
       responses:
         '201':
-          description: The reversal was recorded.
+          description: The reversal was recorded; `Location` is its own URL under `/v1/transactions`.
           headers:
             Location:
               $ref: '#/components/headers/Location'

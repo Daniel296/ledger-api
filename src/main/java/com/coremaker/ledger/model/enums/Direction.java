@@ -11,4 +11,9 @@ public enum Direction {
 
         return this == CREDIT ? amount : amount.negate();
     }
+
+    public Direction opposite() {
+
+        return this == CREDIT ? DEBIT : CREDIT;
+    }
 }

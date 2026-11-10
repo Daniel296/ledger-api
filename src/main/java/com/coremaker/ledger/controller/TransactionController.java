@@ -34,14 +34,23 @@ public class TransactionController {
     @PostMapping
     public ResponseEntity<TransactionResponse> post(@Valid @RequestBody TransactionRequest request) {
 
-        var transaction = transactionService.post(request);
+        return created(transactionService.post(request));
+    }
+
+    @PostMapping("/{transactionId}/reversal")
+    public ResponseEntity<TransactionResponse> reverse(@PathVariable UUID transactionId) {
+
+        return created(transactionService.reverse(transactionId));
+    }
+
+    private static ResponseEntity<TransactionResponse> created(TransactionResponse transaction) {
+
         var location = ServletUriComponentsBuilder
-                .fromCurrentRequest()
-                .path("/{id}")
+                .fromCurrentContextPath()
+                .path("/v1/transactions/{id}")
                 .buildAndExpand(transaction.id())
                 .toUri();
 
         return ResponseEntity.created(location).body(transaction);
     }
-
 }

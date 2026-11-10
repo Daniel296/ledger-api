@@ -20,6 +20,7 @@ import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
+import com.jayway.jsonpath.JsonPath;
 
 @IntegrationTest
 class TransactionApiShould {
@@ -58,6 +59,69 @@ class TransactionApiShould {
     }
 
     @Test
+    void reverseATransactionByFlippingEveryEntry() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payouts = account(EUR, "0");
+        var fees = account(EUR, "0");
+        recordTransaction("Payment settled", debit(funding, "125.50"), credit(merchant, "125.50"));
+        var payout = recordTransaction("Payout", debit(merchant, "100.00"), credit(payouts, "98.50"), credit(fees, "1.50"));
+
+        var reversal = reverse(id(payout));
+
+        assertThat(reversal).hasStatus(HttpStatus.CREATED);
+        assertThat(reversal).bodyJson().extractingPath("$.reversalOf").isEqualTo(id(payout));
+        assertThat(reversal).bodyJson().extractingPath("$.description").isEqualTo("Reversal of %s".formatted(id(payout)));
+        assertThat(reversal).bodyJson()
+                .extractingPath("$.entries[*].direction")
+                .asArray()
+                .containsExactly("CREDIT", "DEBIT", "DEBIT");
+        assertBalance(merchant, "125.50");
+        assertBalance(payouts, "0.00");
+        assertBalance(fees, "0.00");
+        assertThat(get(reversal.getResponse().getHeader("Location"))).bodyJson().isEqualTo(body(reversal));
+        assertThat(get("/v1/transactions/{id}", id(payout))).bodyJson().isEqualTo(body(payout));
+    }
+
+    @Test
+    void refuseToReverseATransactionTwiceOrToReverseAReversal() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payment = recordTransaction("Payment settled", debit(funding, "10.00"), credit(merchant, "10.00"));
+        var reversal = reverse(id(payment));
+
+        var reversedAgain = reverse(id(payment));
+        var reversalReversed = reverse(id(reversal));
+
+        assertThat(reversedAgain).hasStatus(HttpStatus.CONFLICT);
+        assertThat(reversedAgain).bodyJson().extractingPath("$.errorCode").isEqualTo("TRANSACTION_ALREADY_REVERSED");
+        assertThat(reversalReversed).hasStatus(HttpStatus.CONFLICT);
+        assertThat(reversalReversed).bodyJson().extractingPath("$.errorCode").isEqualTo("REVERSAL_NOT_REVERSIBLE");
+        assertBalance(merchant, "0.00");
+        assertBalance(funding, "0.00");
+    }
+
+    @Test
+    void refuseAReversalThatWouldTakeAnAccountPastItsOverdraftLimit() throws Exception {
+
+        var funding = account(EUR, "1000.00");
+        var merchant = account(EUR, "0");
+        var payouts = account(EUR, "0");
+        var payment = recordTransaction("Payment settled", debit(funding, "125.50"), credit(merchant, "125.50"));
+        recordTransaction("Payout", debit(merchant, "100.00"), credit(payouts, "100.00"));
+        var transactionsBefore = transactionRepository.count();
+
+        var reversal = reverse(id(payment));
+
+        assertThat(reversal).hasStatus(HttpStatus.UNPROCESSABLE_CONTENT);
+        assertThat(reversal).bodyJson().extractingPath("$.errorCode").isEqualTo("OVERDRAFT_LIMIT_EXCEEDED");
+        assertThat(transactionRepository.count()).isEqualTo(transactionsBefore);
+        assertBalance(merchant, "25.50");
+    }
+
+    @Test
     void leaveNothingBehindWhenATransactionIsRefused() {
 
         var merchant = account(EUR, "0");
@@ -82,9 +146,12 @@ class TransactionApiShould {
     void reportATransactionThatDoesNotExist() {
 
         var read = get("/v1/transactions/{id}", UUID.randomUUID());
+        var reversal = reverse(UUID.randomUUID().toString());
 
         assertThat(read).hasStatus(HttpStatus.NOT_FOUND);
         assertThat(read).bodyJson().extractingPath("$.errorCode").isEqualTo("TRANSACTION_NOT_FOUND");
+        assertThat(reversal).hasStatus(HttpStatus.NOT_FOUND);
+        assertThat(reversal).bodyJson().extractingPath("$.errorCode").isEqualTo("TRANSACTION_NOT_FOUND");
     }
 
     @Test
@@ -102,11 +169,13 @@ class TransactionApiShould {
                 """);
         var entries = Collections.nCopies(101, entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var tooManyEntries = recordTransaction("Payout", entries.toArray(String[]::new));
+        var reversalOfNotAnId = reverse("not-a-uuid");
 
         assertThat(noEntries).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(unknownDirection).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(nullEntry).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(tooManyEntries).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(reversalOfNotAnId).hasStatus(HttpStatus.BAD_REQUEST);
     }
 
     private MvcTestResult recordTransaction(String description, String... entries) {
@@ -125,11 +194,28 @@ class TransactionApiShould {
                 .exchange();
     }
 
+    private MvcTestResult reverse(String transactionId) {
+
+        return mvc.post()
+                .uri("/v1/transactions/{id}/reversal", transactionId)
+                .exchange();
+    }
+
     private MvcTestResult get(String uri, Object... variables) {
 
         return mvc.get()
                 .uri(uri, variables)
                 .exchange();
+    }
+
+    private static String id(MvcTestResult created) throws Exception {
+
+        return JsonPath.read(body(created), "$.id");
+    }
+
+    private static String body(MvcTestResult result) throws Exception {
+
+        return result.getResponse().getContentAsString();
     }
 
     private void assertBalance(Account account, String balance) {

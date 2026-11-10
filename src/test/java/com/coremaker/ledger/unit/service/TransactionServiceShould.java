@@ -1,5 +1,6 @@
 package com.coremaker.ledger.unit.service;
 
+import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_ALREADY_REVERSED;
 import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_NOT_FOUND;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static com.coremaker.ledger.model.enums.Currency.JPY;
@@ -7,6 +8,8 @@ import static com.coremaker.ledger.model.enums.Direction.CREDIT;
 import static com.coremaker.ledger.model.enums.Direction.DEBIT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -14,7 +17,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,14 +36,15 @@ import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
 import com.coremaker.ledger.service.TransactionService;
+import com.coremaker.ledger.validation.ReversalValidator;
 import com.coremaker.ledger.validation.TransactionValidator;
 
 class TransactionServiceShould {
 
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
-    private final TransactionService transactionService =
-            new TransactionService(accountRepository, transactionRepository, new TransactionValidator());
+    private final TransactionService transactionService = new TransactionService(
+            accountRepository, transactionRepository, new TransactionValidator(), new ReversalValidator());
 
     @Test
     void moveTheMoneyAndRecordTheBalanceAfterEachEntry() {
@@ -50,7 +53,7 @@ class TransactionServiceShould {
         var payouts = account(EUR, "0");
         var fees = account(EUR, "0");
         lockable(merchant, payouts, fees);
-        when(transactionRepository.save(any())).thenAnswer(invocation -> withId(invocation.getArgument(0)));
+        when(transactionRepository.save(any())).then(returnsFirstArg());
 
         var recorded = transactionService.post(request(
                 entry(merchant, DEBIT, "100.00"), entry(payouts, CREDIT, "98.50"), entry(fees, CREDIT, "1.50")));
@@ -76,7 +79,7 @@ class TransactionServiceShould {
         var merchant = account(EUR, "25.50");
         var payouts = account(EUR, "0");
         lockable(merchant, payouts);
-        when(transactionRepository.save(any())).thenAnswer(invocation -> withId(invocation.getArgument(0)));
+        when(transactionRepository.save(any())).then(returnsFirstArg());
 
         transactionService.post(request(
                 entry(merchant, DEBIT, "50.00"), entry(merchant, CREDIT, "30.00"), entry(payouts, CREDIT, "20.00")));
@@ -108,14 +111,9 @@ class TransactionServiceShould {
     @Test
     void showAmountsWithTheDecimalPlacesOfTheCurrency() {
 
-        var transaction = withId(new Transaction());
-        transaction.setCurrency(JPY);
-        transaction.setDescription("Payment settled");
-        transaction.setRecordedAt(Instant.now());
-        transaction.setEntries(List.of(
+        var transaction = recorded(JPY,
                 entry(UUID.randomUUID(), DEBIT, "15000.0000"),
-                entry(UUID.randomUUID(), CREDIT, "15000.0000")));
-        when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
+                entry(UUID.randomUUID(), CREDIT, "15000.0000"));
 
         var read = transactionService.get(transaction.getId());
 
@@ -131,6 +129,53 @@ class TransactionServiceShould {
         assertThatThrownBy(() -> transactionService.get(id))
                 .isInstanceOfSatisfying(LedgerException.class,
                         notFound -> assertThat(notFound.getCode()).isEqualTo(TRANSACTION_NOT_FOUND));
+    }
+
+    @Test
+    void reverseEveryEntryAndLinkTheReversalToTheOriginal() {
+
+        var merchant = account(EUR, "25.50");
+        var payouts = account(EUR, "98.50");
+        var fees = account(EUR, "1.50");
+        var payout = recorded(EUR,
+                entry(merchant.getId(), DEBIT, "100.00"),
+                entry(payouts.getId(), CREDIT, "98.50"),
+                entry(fees.getId(), CREDIT, "1.50"));
+        lockable(merchant, payouts, fees);
+        when(transactionRepository.save(any())).then(returnsFirstArg());
+
+        var reversal = transactionService.reverse(payout.getId());
+
+        assertThat(reversal.reversalOf()).isEqualTo(payout.getId());
+        assertThat(reversal.description()).isEqualTo("Reversal of %s".formatted(payout.getId()));
+        assertThat(reversal.entries())
+                .extracting(EntryResponse::accountId, EntryResponse::direction, EntryResponse::amount)
+                .containsExactly(
+                        tuple(merchant.getId(), CREDIT, "100.00"),
+                        tuple(payouts.getId(), DEBIT, "98.50"),
+                        tuple(fees.getId(), DEBIT, "1.50"));
+        assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
+        assertThat(payouts.getBalance()).isZero();
+        assertThat(fees.getBalance()).isZero();
+    }
+
+    @Test
+    void reverseNothingWhenTheTransactionWasAlreadyReversed() {
+
+        var merchant = account(EUR, "125.50");
+        var payouts = account(EUR, "0");
+        var payout = recorded(EUR, entry(merchant.getId(), DEBIT, "100.00"), entry(payouts.getId(), CREDIT, "100.00"));
+        lockable(merchant, payouts);
+        var payoutId = payout.getId();
+        when(transactionRepository.existsByReversalOf(payoutId)).thenReturn(true);
+
+        assertThatThrownBy(() -> transactionService.reverse(payoutId))
+                .isInstanceOfSatisfying(LedgerException.class,
+                        refusal -> assertThat(refusal.getCode()).isEqualTo(TRANSACTION_ALREADY_REVERSED));
+
+        verify(transactionRepository, never()).save(any());
+        assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
+        assertThat(payouts.getBalance()).isZero();
     }
 
     private void lockable(Account... accounts) {
@@ -164,6 +209,15 @@ class TransactionServiceShould {
         entry.setDirection(direction);
         entry.setAmount(new BigDecimal(amount));
         return entry;
+    }
+
+    private Transaction recorded(Currency currency, Entry... entries) {
+
+        var transaction = withId(new Transaction());
+        transaction.setCurrency(currency);
+        transaction.setEntries(List.of(entries));
+        when(transactionRepository.findById(transaction.getId())).thenReturn(Optional.of(transaction));
+        return transaction;
     }
 
     private static Transaction withId(Transaction transaction) {
