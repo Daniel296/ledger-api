@@ -11,6 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,9 +27,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import com.coremaker.ledger.dto.message.PaymentSettled;
 import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.EntryResponse;
+import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.model.Entry;
@@ -193,6 +196,42 @@ class TransactionServiceShould {
         verify(outboxService, never()).add(any());
         assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
         assertThat(payouts.getBalance()).isZero();
+    }
+
+    @Test
+    void settleAPaymentFromTheSettlementAccountOfItsCurrencyToTheMerchantUnderThePaymentId() {
+
+        var settlement = account(EUR, "0");
+        settlement.setUnlimitedOverdraft(true);
+        var merchant = account(EUR, "0");
+        when(accountRepository.findSettlementAccountId(EUR)).thenReturn(Optional.of(settlement.getId()));
+        lockable(settlement, merchant);
+        when(transactionRepository.save(any())).then(returnsFirstArg());
+        var payment = new PaymentSettled("pay-42", merchant.getId(), new BigDecimal("125.50"), EUR);
+
+        var settled = transactionService.settle(payment);
+
+        assertThat(settled.description()).isEqualTo("Payment pay-42 settled");
+        assertThat(settled.entries())
+                .extracting(EntryResponse::accountId, EntryResponse::direction, EntryResponse::amount)
+                .containsExactly(tuple(settlement.getId(), DEBIT, "125.50"), tuple(merchant.getId(), CREDIT, "125.50"));
+        assertThat(settlement.getBalance()).isEqualByComparingTo("-125.50");
+        assertThat(merchant.getBalance()).isEqualByComparingTo("125.50");
+        verify(idempotencyService).commitOnce(eq("payment-settled:pay-42"), eq("settlePayment"), eq(payment),
+                eq(TransactionResponse.class), any());
+        verify(outboxService).add(settled);
+    }
+
+    @Test
+    void settleNothingWhileTheCurrencyHasNoSettlementAccount() {
+
+        when(accountRepository.findSettlementAccountId(JPY)).thenReturn(Optional.empty());
+        var payment = new PaymentSettled("pay-7", UUID.randomUUID(), new BigDecimal("15000"), JPY);
+
+        assertThatThrownBy(() -> transactionService.settle(payment)).isInstanceOf(IllegalStateException.class);
+
+        verify(transactionRepository, never()).save(any());
+        verify(outboxService, never()).add(any());
     }
 
     private void lockable(Account... accounts) {

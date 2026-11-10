@@ -1,11 +1,14 @@
 package com.coremaker.ledger.service;
 
 import static com.coremaker.ledger.exception.ErrorCode.TRANSACTION_NOT_FOUND;
+import static com.coremaker.ledger.model.enums.Direction.CREDIT;
+import static com.coremaker.ledger.model.enums.Direction.DEBIT;
 import static java.util.stream.Collectors.toMap;
 
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
@@ -13,6 +16,8 @@ import java.util.function.Function;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.coremaker.ledger.dto.message.PaymentSettled;
+import com.coremaker.ledger.dto.request.EntryRequest;
 import com.coremaker.ledger.dto.request.TransactionRequest;
 import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.exception.LedgerException;
@@ -56,6 +61,12 @@ public class TransactionService {
                 () -> recordReversal(id));
     }
 
+    public TransactionResponse settle(PaymentSettled payment) {
+
+        return idempotencyService.commitOnce("payment-settled:%s".formatted(payment.paymentId()), "settlePayment", payment,
+                TransactionResponse.class, () -> recordPayment(payment));
+    }
+
     private TransactionResponse recordTransaction(TransactionRequest request) {
 
         var transaction = new Transaction();
@@ -82,6 +93,17 @@ public class TransactionService {
         reversalValidator.validate(original, transactionRepository.existsByReversalOf(id));
 
         return apply(reversal, accounts);
+    }
+
+    private TransactionResponse recordPayment(PaymentSettled payment) {
+
+        var currency = payment.currency();
+        var settlementAccountId = accountRepository.findSettlementAccountId(currency)
+                .orElseThrow(() -> new IllegalStateException("There is no settlement account in %s".formatted(currency)));
+
+        return recordTransaction(new TransactionRequest("Payment %s settled".formatted(payment.paymentId()), List.of(
+                new EntryRequest(settlementAccountId, DEBIT, payment.amount()),
+                new EntryRequest(payment.merchantAccountId(), CREDIT, payment.amount()))));
     }
 
     private Transaction find(UUID id) {

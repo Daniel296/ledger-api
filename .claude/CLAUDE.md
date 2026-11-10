@@ -11,9 +11,10 @@ service, starts it and runs the tests.
 - Liquibase owns the schema, as formatted SQL changelogs; Hibernate only validates (`ddl-auto: validate`).
 - A committed changeset is never edited: every schema change is a new changeset.
 - Accounts are locked pessimistically (`@Lock(PESSIMISTIC_WRITE)`), always in ascending id order.
-- Every `POST` writes through `IdempotencyService.commitOnce`: it reserves the idempotency key in its own
-  committed transaction, then runs the effect in a `READ COMMITTED` transaction that locks the key before any account;
-  it refuses to run inside another transaction.
+- Every `POST`, and every `payment-settled` message (key `payment-settled:<paymentId>`, hashed on the payment's
+  business fields, never its event id), writes through `IdempotencyService.commitOnce`: it reserves the idempotency
+  key in its own committed transaction, then runs the effect in a `READ COMMITTED` transaction that locks the key
+  before any account; it refuses to run inside another transaction.
 - Transactions and entries are `@Immutable`.
 - Every recorded transaction is announced through the outbox: `OutboxService.add` writes its message in the
   transaction that records it (it refuses to run outside one). `OutboxRelay` publishes it: only the instance holding
@@ -38,10 +39,10 @@ service, starts it and runs the tests.
   Rules live in validators (`validation`), which services call before changing anything.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
-- Packages follow the layers, grouped into subfolders: `dto/request` and `dto/response`,
-  `exception/handler`, `model/enums`; Kafka clients live in `messaging`. Integration tests sit in
-  `integration/api`, `integration/repository`, `integration/service` and `integration/concurrency`, with the shared
-  setup in `integration/support`.
+- Packages follow the layers, grouped into subfolders: `dto/request`, `dto/response` and `dto/message` (what Kafka
+  brings in), `exception/handler`, `model/enums`; Kafka clients live in `messaging`. Integration tests sit in
+  `integration/api`, `integration/messaging`, `integration/repository`, `integration/service` and
+  `integration/concurrency`, with the shared setup in `integration/support`.
 - DTOs are named after the resource in the URL: `<Resource>Request` for what the client sends,
   `<Resource>Response` for what it gets back (`AccountRequest`, `AccountResponse`). The OpenAPI request
   schemas carry the same names; response schemas are the bare resource (`Account`).
@@ -63,10 +64,14 @@ service, starts it and runs the tests.
   deadlock) is answered 503 `ACCOUNT_BUSY` with `Retry-After`. Errors of the HTTP layer (400 malformed request,
   405, 415, 500) are left to Spring Boot's standard handling. Validators never know request field names; the
   message names the value at fault (the amount, the account id).
+- A `payment-settled` message that ends in a `LedgerException` (a ledger rule, or `MALFORMED_MESSAGE`) goes to
+  `payment-settled-dlt` unchanged, with `errorCode` and `errorMessage` headers; any other failure is retried until it
+  succeeds, never dead-lettered.
 - Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the
   `Currency` constants (`EUR`, not `Currency.EUR`).
 - An account with no overdraft limit (the settlement accounts) is marked explicitly with
-  `unlimitedOverdraft`; `overdraftLimit` is never null and defaults to zero.
+  `unlimitedOverdraft`; `overdraftLimit` is never null and defaults to zero. The settlement account of a currency
+  is found by that flag (`AccountRepository.findSettlementAccountId`), never by a hardcoded id.
 - Never query inside a loop; never re-read data already loaded.
 
 ## Tests
