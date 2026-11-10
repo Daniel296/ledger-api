@@ -11,11 +11,11 @@ import jakarta.persistence.LockModeType;
 
 public interface IdempotentRequestRepository extends JpaRepository<IdempotentRequest, String> {
 
-    @Modifying
-    @Query("insert into IdempotentRequest (idempotencyKey) values (:idempotencyKey) on conflict do nothing")
-    void reserve(String idempotencyKey);
-
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from IdempotentRequest r where r.idempotencyKey = :idempotencyKey")
     IdempotentRequest findByIdForUpdate(String idempotencyKey);
+
+    @Modifying
+    @Query("insert into IdempotentRequest (idempotencyKey) values (:idempotencyKey) on conflict do nothing")
+    void reserve(String idempotencyKey);
 }
