@@ -121,6 +121,46 @@ A client that gets no answer can send the same `POST` again with the same `Idemp
   `91509bf3-2df9-43f8-89e3-2283c7f5a97d`, JPY `7bba09b3-74f5-4fbd-9315-25c9c98e4f94`. The PDF names
   only EUR and JPY; USD gets one too, since the ledger supports it and a USD payment needs it.
 
+## Correct under pressure
+
+The ledger runs on several instances that share nothing but MySQL, so every guarantee rests on the
+database, never on the JVM. Each one is proven against a real MySQL (Testcontainers), and every
+race between requests runs five times:
+
+| Guarantee | Test |
+|---|---|
+| No account past its overdraft limit, no lost update, no deadlock when money moves A → B and B → A at once, a transaction reversed at most once, with the requests split across two instances | `ConcurrentTransactionsShould` |
+| Every currency adds up to zero and every balance equals the sum of its entries: checked again and again while 200 transactions and reversals race on two instances, and once more at the end | `LedgerIntegrityShould` |
+| A request sent again with the same `Idempotency-Key` takes effect once: copies sent at once, to one instance or to both, and a first attempt that dies before its commit | `ConcurrentRetriesShould`, `ConcurrentTransactionsShould`, `IdempotencyServiceShould` |
+| A request kept waiting on a locked account is answered `503` after 5 seconds and records nothing, while requests on other accounts are still served | `BusyAccountShould` |
+| A refused transaction leaves nothing behind | `TransactionApiShould` |
+
+- **Two instances in the tests**: the second instance is a second Spring Boot application started
+  in the same JVM, with its own connection pool and its own Hibernate, connected to the same MySQL.
+  Like two containers, the two instances share only the database.
+- **Lock waits**: MySQL waits 50 seconds for a row lock by default; the ledger sets 5
+  (`innodb_lock_wait_timeout`, on every connection). A request that waits longer, or that MySQL
+  picks as the victim of a deadlock (none is expected: a transaction locks all its accounts in one
+  statement, in id order), is rolled back and answered `503 ACCOUNT_BUSY` with `Retry-After: 1`. The ledger does not
+  retry by itself: on a busy account a retry only makes the queue longer, and the client can retry
+  safely with the same `Idempotency-Key`. A copy of a request waiting for its first attempt on the
+  idempotency key's lock waits under the same 5 seconds, so when that attempt is held up by busy
+  accounts, the copy is answered `503` too.
+- **Connection pool**: a request keeps its database connection while it waits for a lock, so
+  requests piling up on one busy account can hold every connection of the pool. The 5-second lock
+  wait gives each of them back well before the 30 seconds Hikari lets a request wait for a
+  connection, so a burst on one account delays requests on other accounts by seconds instead of
+  failing them. A flood that never stops on one account would still starve the others; splitting
+  the settlement account is in Improvements. The pool keeps Hikari's default of 10 connections per
+  instance: size it to the requests an instance serves at once, and keep instances × pool size below
+  MySQL's `max_connections` (151 by default).
+- **Largest balance**: amounts and balances are `DECIMAL(19, 4)`, with 15 integer digits. A larger
+  amount in a request is refused with `400`. A balance gets there only after a quadrillion has piled
+  up; MySQL then refuses the update and the whole transaction is rolled back (`500`, nothing
+  recorded).
+- **Isolated tests**: before each integration test, `@IntegrationTest` empties the ledger and runs the
+  settlement accounts' migration again, so the checks over the whole ledger see only the test's own data.
+
 This README is completed as the service is built (API, design decisions, guarantees for consumers,
 improvements).
 

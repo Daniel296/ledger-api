@@ -54,7 +54,8 @@ service, starts it and runs the tests.
 - Validators stop at the first broken rule and throw a `LedgerException` (code, message).
 - The ledger's own errors are one `LedgerException` carrying an `ErrorCode`. The API answers them as
   `{"errorCode", "message"}`, and `exception/handler/ApiExceptionHandler` picks the HTTP status from the code
-  (404 not found, 409 conflict, 422 for every broken rule). Errors of the HTTP layer (400 malformed request,
+  (404 not found, 409 conflict, 422 for every broken rule). A lock not obtained in time (lock wait timeout,
+  deadlock) is answered 503 `ACCOUNT_BUSY` with `Retry-After`. Errors of the HTTP layer (400 malformed request,
   405, 415, 500) are left to Spring Boot's standard handling. Validators never know request field names; the
   message names the value at fault (the amount, the account id).
 - Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the
@@ -77,7 +78,10 @@ service, starts it and runs the tests.
 - Unit tests cover 100% of lines and branches of the unit-testable code (JaCoCo; Lombok-generated
   code is excluded through `lombok.config`), with no test that only restates the code.
 - Guarantees (concurrency, idempotency, redelivery, integrity, refused transactions leaving nothing
-  behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks.
+  behind) are proven against the real MySQL and Kafka via Testcontainers, not mocks. Several instances are
+  proven with `SecondInstance`, a second application context on the same MySQL.
+- Every integration test starts from an empty ledger: `@IntegrationTest` deletes everything and runs the
+  settlement accounts' migration again.
 - Every behaviour change comes with its test in the same change.
 
 ## Workflow

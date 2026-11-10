@@ -19,6 +19,9 @@ info:
       naming the value at fault. Only the first broken rule is reported. Errors raised by the HTTP
       layer itself (400 for a malformed request, 405, 415, 500) come with Spring Boot's standard
       error body.
+    - `503` with `Retry-After` means the accounts of the request stayed busy with other
+      transactions for too long. Nothing was recorded: send the request again later, with the same
+      `Idempotency-Key`.
     - The version is in the path. Within `v1` changes are additive only (new endpoints, new
       optional fields, new error codes); clients must ignore fields they do not know.
     - Every request may carry an `X-Request-Id`; the ledger generates one when it is missing,
@@ -180,6 +183,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/AccountBusy'
 
   /v1/transactions/{transactionId}:
     get:
@@ -237,6 +242,8 @@ paths:
                 $ref: '#/components/schemas/Error'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/AccountBusy'
 
 components:
   parameters:
@@ -441,6 +448,7 @@ components:
             422: `INVALID_CURRENCY`, `UNSUPPORTED_CURRENCY`, `NEGATIVE_OVERDRAFT_LIMIT`,
             `TOO_FEW_ENTRIES`, `NON_POSITIVE_AMOUNT`, `TOO_MANY_DECIMAL_PLACES`, `UNKNOWN_ACCOUNT`,
             `CURRENCY_MISMATCH`, `UNBALANCED`, `OVERDRAFT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`.
+            503: `ACCOUNT_BUSY`.
         message:
           type: string
 
@@ -467,3 +475,21 @@ components:
           example:
             errorCode: UNBALANCED
             message: Debits total 100.00 but credits total 99.00
+    AccountBusy:
+      description: |
+        An account of the request stayed locked by other transactions for longer than the ledger
+        waits (a few seconds). Nothing was recorded; retry after `Retry-After` seconds with the same
+        idempotency key.
+      headers:
+        Retry-After:
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            errorCode: ACCOUNT_BUSY
+            message: The accounts of this request are busy with other transactions; retry later
