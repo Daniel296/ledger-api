@@ -1,11 +1,14 @@
 package com.coremaker.ledger.service;
 
 import static com.coremaker.ledger.exception.ErrorCode.IDEMPOTENCY_KEY_REUSED;
+import static java.nio.charset.StandardCharsets.UTF_8;
 
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.function.Supplier;
 
-import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -18,6 +21,7 @@ import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.IdempotentRequest;
 import com.coremaker.ledger.repository.IdempotentRequestRepository;
 
+import lombok.SneakyThrows;
 import tools.jackson.databind.json.JsonMapper;
 
 @Service
@@ -53,7 +57,7 @@ public class IdempotencyService {
     private <T> T answerOnce(String idempotencyKey, String operation, Object request, Class<T> responseType,
             Supplier<T> effect, boolean refusalRemembered) {
 
-        var requestHash = DigestUtils.sha256Hex(jsonMapper.writeValueAsString(List.of(operation, request)));
+        var requestHash = sha256(jsonMapper.writeValueAsString(List.of(operation, request)));
         readCommitted.executeWithoutResult(reservation -> idempotentRequestRepository.reserve(idempotencyKey));
 
         var answer = readCommitted.execute(
@@ -103,5 +107,11 @@ public class IdempotencyService {
                 throw refusal;
             };
         }
+    }
+
+    @SneakyThrows(NoSuchAlgorithmException.class)
+    private static String sha256(String text) {
+
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(UTF_8)));
     }
 }

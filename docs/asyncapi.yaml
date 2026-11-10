@@ -40,9 +40,12 @@ info:
       even when the instance that recorded it crashes right after the commit, or Kafka is down for a
       while: its message waits in the outbox until it can be published. A refused transaction is never
       announced.
-    - A message may arrive more than once (at-least-once delivery): a publisher that stops after Kafka
-      acknowledged a message but before it noted it as sent sends it again. The copy is identical
-      (same key, same body). Deduplicate on the transaction `id`, which is also the message key.
+    - A message may arrive more than once (at-least-once delivery). A send Kafka does not acknowledge
+      within 5 seconds is sent again by the next publishing run, while Kafka may still deliver the
+      first attempt, so copies are expected after Kafka was slow or unreachable, not only in rare
+      cases. A publisher that stops after Kafka acknowledged a message but before it noted it as sent
+      sends it again too. Copies are identical (same key, same body). Deduplicate on the transaction
+      `id`, which is also the message key.
     - Order: the topic has one partition and one instance publishes at a time, in the order the
       transactions were recorded. Two transactions that touch the same account arrive in the order
       they were applied to it, and a reversal always arrives after the transaction it reverses.
