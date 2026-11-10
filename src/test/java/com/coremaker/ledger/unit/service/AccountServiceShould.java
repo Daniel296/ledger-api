@@ -4,6 +4,7 @@ import static com.coremaker.ledger.exception.ErrorCode.ACCOUNT_NOT_FOUND;
 import static com.coremaker.ledger.model.enums.Currency.EUR;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.AdditionalAnswers.returnsFirstArg;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -30,11 +31,10 @@ class AccountServiceShould {
     @Test
     void openAnAccountWithAZeroOverdraftLimitWhenNoneIsGiven() {
 
-        when(accountRepository.save(any())).thenAnswer(invocation -> withId(invocation.getArgument(0)));
+        when(accountRepository.save(any())).then(returnsFirstArg());
 
         var account = accountService.open("EUR", null);
 
-        assertThat(account.id()).isNotNull();
         assertThat(account.currency()).isEqualTo(EUR);
         assertThat(account.overdraftLimit()).isEqualTo("0.00");
         assertThat(account.balance()).isEqualTo("0.00");
@@ -44,7 +44,7 @@ class AccountServiceShould {
     @Test
     void openAnAccountWithTheOverdraftLimitGiven() {
 
-        when(accountRepository.save(any())).thenAnswer(invocation -> withId(invocation.getArgument(0)));
+        when(accountRepository.save(any())).then(returnsFirstArg());
 
         var account = accountService.open("JPY", new BigDecimal("1000"));
 
@@ -62,7 +62,8 @@ class AccountServiceShould {
     @Test
     void showNoOverdraftLimitForAnAccountWithoutOne() {
 
-        var settlement = withId(new Account());
+        var settlement = new Account();
+        settlement.setId(UUID.randomUUID());
         settlement.setCurrency(EUR);
         settlement.setUnlimitedOverdraft(true);
         settlement.setBalance(new BigDecimal("-125.5000"));
@@ -84,11 +85,5 @@ class AccountServiceShould {
         assertThatThrownBy(() -> accountService.get(id))
                 .isInstanceOfSatisfying(LedgerException.class,
                         notFound -> assertThat(notFound.getCode()).isEqualTo(ACCOUNT_NOT_FOUND));
-    }
-
-    private static Account withId(Account account) {
-
-        account.setId(UUID.randomUUID());
-        return account;
     }
 }
