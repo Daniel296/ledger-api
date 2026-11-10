@@ -12,7 +12,9 @@ import com.coremaker.ledger.model.OutboxMessage;
 import com.coremaker.ledger.repository.OutboxMessageRepository;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class OutboxRelay {
@@ -35,7 +37,8 @@ public class OutboxRelay {
 
         for (var message : pending) {
 
-            transactionRecordedPublisher.publish(message.getTransactionId(), message.getPayload());
+            transactionRecordedPublisher.publish(message);
+            log.info("Announced transaction {} (correlation id {})", message.getTransactionId(), message.getCorrelationId());
         }
 
         var published = pending.stream()

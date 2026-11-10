@@ -1,10 +1,12 @@
 package com.coremaker.ledger.integration.api;
 
 import static com.coremaker.ledger.model.enums.Currency.EUR;
+import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 import org.apache.kafka.clients.consumer.ConsumerRecord;
@@ -90,11 +92,56 @@ class TransactionAnnouncementsShould {
         }
     }
 
+    @Test
+    void announceATransactionWithTheRequestIdOfItsRequest() throws Exception {
+
+        var funding = account("1000.00");
+        var merchant = account("0");
+
+        try (var announcements = Announcements.fromNowOn(consumerFactory)) {
+
+            var payment = post(newKey(), "trace-42", transfer(funding, merchant, "10.00"));
+
+            assertThat(requestId(payment)).isEqualTo("trace-42");
+            assertThat(correlationId(announcements.first(1).get(0))).isEqualTo("trace-42");
+        }
+    }
+
+    @Test
+    void generateARequestIdWhenItIsMissingOrInvalid() throws Exception {
+
+        var funding = account("1000.00");
+        var merchant = account("0");
+
+        try (var announcements = Announcements.fromNowOn(consumerFactory)) {
+
+            var missing = post(newKey(), transfer(funding, merchant, "10.00"));
+            var invalid = post(newKey(), "forged\nlog line", transfer(funding, merchant, "10.00"));
+
+            assertThat(announcements.first(2))
+                    .extracting(TransactionAnnouncementsShould::correlationId)
+                    .containsExactly(requestId(missing), requestId(invalid));
+            assertThat(List.of(requestId(missing), requestId(invalid)))
+                    .allSatisfy(generated -> assertThat(UUID.fromString(generated)).hasToString(generated));
+        }
+    }
+
     private MvcTestResult post(String key, String body) {
 
         return mvc.post()
                 .uri("/v1/transactions")
                 .header("Idempotency-Key", key)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body)
+                .exchange();
+    }
+
+    private MvcTestResult post(String key, String requestId, String body) {
+
+        return mvc.post()
+                .uri("/v1/transactions")
+                .header("Idempotency-Key", key)
+                .header("X-Request-Id", requestId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
                 .exchange();
@@ -106,6 +153,16 @@ class TransactionAnnouncementsShould {
                 .uri("/v1/transactions/{id}/reversal", transactionId)
                 .header("Idempotency-Key", newKey())
                 .exchange();
+    }
+
+    private static String requestId(MvcTestResult result) {
+
+        return result.getResponse().getHeader("X-Request-Id");
+    }
+
+    private static String correlationId(ConsumerRecord<String, String> announcement) {
+
+        return new String(announcement.headers().lastHeader("correlationId").value(), UTF_8);
     }
 
     private static String id(MvcTestResult created) throws Exception {

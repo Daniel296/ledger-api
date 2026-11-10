@@ -40,9 +40,10 @@ service, starts it and runs the tests.
 - Layering: controller → service → repository. Controllers stay thin; business rules live in
   services; SQL lives only in repositories. Transactions are owned by the service layer.
 - Packages follow the layers, grouped into subfolders: `dto/request`, `dto/response` and `dto/message` (what Kafka
-  brings in), `exception/handler`, `model/enums`; Kafka clients live in `messaging`. Integration tests sit in
-  `integration/api`, `integration/messaging`, `integration/repository`, `integration/service` and
-  `integration/concurrency`, with the shared setup in `integration/support`.
+  brings in), `exception/handler`, `model/enums`; Kafka clients live in `messaging`, servlet filters in `filter`, and
+  the logging context in `logging`. Integration tests sit in `integration/api`, `integration/messaging`,
+  `integration/repository`, `integration/service` and `integration/concurrency`, with the shared setup in
+  `integration/support`.
 - DTOs are named after the resource in the URL: `<Resource>Request` for what the client sends,
   `<Resource>Response` for what it gets back (`AccountRequest`, `AccountResponse`). The OpenAPI request
   schemas carry the same names; response schemas are the bare resource (`Account`).
@@ -67,6 +68,9 @@ service, starts it and runs the tests.
 - A `payment-settled` message that ends in a `LedgerException` (a ledger rule, or `MALFORMED_MESSAGE`) goes to
   `payment-settled-dlt` unchanged, with `errorCode` and `errorMessage` headers; any other failure is retried until it
   succeeds, never dead-lettered.
+- A request's `X-Request-Id`, or a payment's `paymentId`, is set with `CorrelationId.set` by `RequestIdFilter` or the
+  consumer, and cleared when they finish; `OutboxService.add` stores it with the message, and the relay publishes it
+  as a Kafka header. Only `logging/CorrelationId` touches the MDC.
 - Error codes are a single `ErrorCode` enum in `exception`, used through static imports; so are the
   `Currency` constants (`EUR`, not `Currency.EUR`).
 - An account with no overdraft limit (the settlement accounts) is marked explicitly with

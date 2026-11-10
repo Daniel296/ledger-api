@@ -40,8 +40,8 @@ class OutboxRelayShould {
         outboxRelay.publishPending();
 
         var order = inOrder(transactionRecordedPublisher, outboxMessageRepository);
-        order.verify(transactionRecordedPublisher).publish(first.getTransactionId(), first.getPayload());
-        order.verify(transactionRecordedPublisher).publish(second.getTransactionId(), second.getPayload());
+        order.verify(transactionRecordedPublisher).publish(first);
+        order.verify(transactionRecordedPublisher).publish(second);
         order.verify(outboxMessageRepository).markPublished(eq(List.of(1L, 2L)), any());
     }
 
@@ -63,8 +63,7 @@ class OutboxRelayShould {
         var second = pending(2L);
         when(outboxMessageRepository.findUnlockedPublisherForUpdate()).thenReturn(Optional.of(1));
         when(outboxMessageRepository.findFirst100ByPublishedAtIsNullOrderById()).thenReturn(List.of(first, second));
-        doThrow(new RecordTooLargeException()).when(transactionRecordedPublisher)
-                .publish(second.getTransactionId(), second.getPayload());
+        doThrow(new RecordTooLargeException()).when(transactionRecordedPublisher).publish(second);
 
         assertThatThrownBy(outboxRelay::publishPending).isInstanceOf(RecordTooLargeException.class);
 

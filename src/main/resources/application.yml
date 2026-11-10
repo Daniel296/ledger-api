@@ -17,3 +17,6 @@ spring:
       hibernate:
         type:
           preferred_uuid_jdbc_type: CHAR
+logging:
+  pattern:
+    correlation: "[%X{correlationId:-}] "

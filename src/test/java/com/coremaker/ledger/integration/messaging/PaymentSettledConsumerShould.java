@@ -63,10 +63,11 @@ class PaymentSettledConsumerShould {
 
             send(payment(paymentId, merchant, amount, currency));
 
-            var recorded = transactionRepository.findById(UUID.fromString(announcements.firstTransactionIds(1).get(0)))
-                    .orElseThrow();
+            var announced = announcements.first(1).get(0);
+            var recorded = transactionRepository.findById(UUID.fromString(announced.key())).orElseThrow();
             var settlement = accountRepository.findSettlementAccountId(currency).orElseThrow();
 
+            assertThat(header(announced, "correlationId")).isEqualTo(paymentId);
             assertThat(recorded.getDescription()).isEqualTo("Payment %s settled".formatted(paymentId));
             assertThat(recorded.getEntries())
                     .extracting(Entry::getAccountId, Entry::getDirection)
@@ -181,9 +182,9 @@ class PaymentSettledConsumerShould {
         return UUID.randomUUID().toString();
     }
 
-    private static String header(ConsumerRecord<String, String> deadLetter, String name) {
+    private static String header(ConsumerRecord<String, String> message, String name) {
 
-        return new String(deadLetter.headers().lastHeader(name).value(), UTF_8);
+        return new String(message.headers().lastHeader(name).value(), UTF_8);
     }
 
     private BigDecimal balance(UUID accountId) {

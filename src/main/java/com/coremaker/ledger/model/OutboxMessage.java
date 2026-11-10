@@ -24,6 +24,8 @@ public class OutboxMessage {
 
     private UUID transactionId;
 
+    private String correlationId;
+
     @Column(columnDefinition = "mediumtext")
     private String payload;
 

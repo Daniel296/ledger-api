@@ -78,8 +78,8 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
   conflicting state (already reversed, or itself a reversal), `422` a ledger rule is broken or an
   idempotency key is reused for a different request.
 - **Versioned in the path**: `v1` only evolves additively, so clients must ignore unknown fields.
-- **`X-Request-Id`** (optional, generated when missing) is returned on the response and carried into
-  the logs and the announcements a request causes.
+- **`X-Request-Id`** (optional, generated when missing or invalid) is returned on the response and carried
+  into the logs and the announcement a request causes; see [Following a request](#following-a-request).
 - **Entries are paged by cursor**, not offset, so entries recorded meanwhile never shift a page.
   See [Statement and past balances](#statement-and-past-balances).
 
@@ -246,6 +246,28 @@ What a consumer can rely on:
   A past balance walks back through the entries recorded after `asOf`, so it slows down for an old instant on a
   busy account. Copying the time onto each entry, with an index on `(account_id, recorded_at)`, would turn it into
   a single look-up.
+
+## Following a request
+
+A request's `X-Request-Id`, or a settled payment's `paymentId`, follows it through the logs and into the announcement
+it causes:
+
+```
+… [trace-42] … c.c.ledger.service.TransactionService : Recorded transaction 3f1c…
+… [] …         c.c.ledger.service.OutboxRelay        : Announced transaction 3f1c… (correlation id trace-42)
+```
+
+- `RequestIdFilter` keeps the client's `X-Request-Id` when it is 1 to 100 letters, digits or `-_.:`; otherwise (missing,
+  or a line break that would forge a log line) it generates a UUID. The response carries the id used.
+- The id sits in the logging context (MDC) only while its thread handles the request or the payment message.
+  `OutboxService.add` stores it with the message, and the relay publishes it as the Kafka header `correlationId`.
+- A retry answered from the idempotency store announces nothing, so an announcement carries the id of the request that
+  took effect.
+- A payment-settled message that fails is logged at every delivery with its place and the reason
+  (`payment-settled-1@42 failed on delivery 3: …`); Spring Kafka alone logs no reason.
+- **Few log lines, on purpose, to keep the code simple.** The ledger logs only where a transaction is recorded
+  (`TransactionService`), where it is announced (`OutboxRelay`) and where a payment message fails. There is no line per
+  HTTP request, so a read, a refused request or a retry answered from the store shows its id only on the response.
 
 ## Persistence decisions
 

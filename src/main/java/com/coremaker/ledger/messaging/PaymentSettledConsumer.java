@@ -16,18 +16,22 @@ import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.KafkaOperations;
 import org.springframework.kafka.listener.DeadLetterPublishingRecoverer;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.kafka.support.KafkaUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.util.backoff.ExponentialBackOff;
 
 import com.coremaker.ledger.dto.message.PaymentSettled;
 import com.coremaker.ledger.exception.LedgerException;
+import com.coremaker.ledger.logging.CorrelationId;
 import com.coremaker.ledger.service.TransactionService;
 
 import jakarta.validation.Validator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.json.JsonMapper;
 
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class PaymentSettledConsumer {
@@ -64,13 +68,21 @@ public class PaymentSettledConsumer {
 
         var errorHandler = new DefaultErrorHandler(deadLetters, new ExponentialBackOff());
         errorHandler.setClassifications(Map.of(LedgerException.class, false), true);
+        errorHandler.setRetryListeners((message, failure, delivery) -> log.warn("{} failed on delivery {}: {}",
+                KafkaUtils.format(message), delivery, NestedExceptionUtils.getMostSpecificCause(failure).toString()));
         return errorHandler;
     }
 
     @KafkaListener(topics = TOPIC, groupId = "ledger", properties = "auto.offset.reset=earliest")
     public void consume(ConsumerRecord<String, String> message) {
 
-        transactionService.settle(paymentSettled(message.value()));
+        var payment = paymentSettled(message.value());
+        CorrelationId.set(payment.paymentId());
+        try {
+            transactionService.settle(payment);
+        } finally {
+            CorrelationId.clear();
+        }
     }
 
     private PaymentSettled paymentSettled(String json) {

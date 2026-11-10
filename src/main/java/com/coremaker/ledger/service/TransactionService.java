@@ -31,7 +31,9 @@ import com.coremaker.ledger.validation.ReversalValidator;
 import com.coremaker.ledger.validation.TransactionValidator;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TransactionService {
@@ -140,6 +142,7 @@ public class TransactionService {
 
         var recorded = TransactionResponse.from(transactionRepository.save(transaction));
         outboxService.add(recorded);
+        log.info("Recorded transaction {}", recorded.id());
 
         return recorded;
     }

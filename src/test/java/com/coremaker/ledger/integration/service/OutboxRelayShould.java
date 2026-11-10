@@ -112,7 +112,7 @@ class OutboxRelayShould {
 
                 transactionService.post(newKey(), transfer(funding, merchant));
                 var message = outboxMessageRepository.findAll().get(0);
-                transactionRecordedPublisher.publish(message.getTransactionId(), message.getPayload());
+                transactionRecordedPublisher.publish(message);
                 return message;
             });
 

@@ -5,6 +5,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.coremaker.ledger.dto.response.TransactionResponse;
+import com.coremaker.ledger.logging.CorrelationId;
 import com.coremaker.ledger.model.OutboxMessage;
 import com.coremaker.ledger.repository.OutboxMessageRepository;
 
@@ -23,6 +24,7 @@ public class OutboxService {
 
         var message = new OutboxMessage();
         message.setTransactionId(transaction.id());
+        message.setCorrelationId(CorrelationId.get());
         message.setPayload(jsonMapper.writeValueAsString(transaction));
         outboxMessageRepository.save(message);
     }
