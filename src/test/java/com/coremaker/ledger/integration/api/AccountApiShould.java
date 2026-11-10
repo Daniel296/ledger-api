@@ -85,6 +85,7 @@ class AccountApiShould {
 
         return mvc.post()
                 .uri("/v1/accounts")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
                 .exchange();

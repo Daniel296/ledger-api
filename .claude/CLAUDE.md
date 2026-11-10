@@ -11,6 +11,9 @@ service, starts it and runs the tests.
 - Liquibase owns the schema, as formatted SQL changelogs; Hibernate only validates (`ddl-auto: validate`).
 - A committed changeset is never edited: every schema change is a new changeset.
 - Accounts are locked pessimistically (`@Lock(PESSIMISTIC_WRITE)`), always in ascending id order.
+- Every `POST` writes through `IdempotencyService.commitOnce`: it reserves the idempotency key in its own
+  committed transaction, then runs the effect in a `READ COMMITTED` transaction that locks the key before any account;
+  it refuses to run inside another transaction.
 - Transactions and entries are `@Immutable`.
 - `open-in-view` stays off; explicit queries use `@Query`.
 - Never paginate over a collection fetch; page the account statement with keyset, not offset.

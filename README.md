@@ -41,15 +41,56 @@ calls must exist in it. What no test calls is not checked, so each endpoint come
 | `POST` | `/v1/transactions/{transactionId}/reversal` | Reverse a transaction (at most once, hence singular) |
 
 - **Amounts are decimal strings** (`"125.50"`), so no client reads them as floating point.
-- **Every `POST` needs an `Idempotency-Key`**: a retry with the same key and body gets the original
-  response and takes effect at most once; the same key with a different body is refused.
+- **Every `POST` needs an `Idempotency-Key`** (`400` without one): a retry with the same key and the
+  same request gets the original response (status, body and `Location`) and takes effect at most once;
+  once a request has taken effect, the same key with a different request, on any endpoint, is refused
+  with `422 IDEMPOTENCY_KEY_REUSED`.
+  See [Idempotency](#idempotency).
 - **Errors** are `{"errorCode", "message"}`: a stable code a calling system can act on, and a
   message naming the value at fault. `400` malformed request, `404` unknown resource in the path, `409`
-  conflicting state (already reversed, request still in progress), `422` a ledger rule is broken.
+  conflicting state (already reversed, or itself a reversal), `422` a ledger rule is broken or an
+  idempotency key is reused for a different request.
 - **Versioned in the path**: `v1` only evolves additively, so clients must ignore unknown fields.
 - **`X-Request-Id`** (optional, generated when missing) is returned on the response and carried into
   the logs and the announcements a request causes.
 - **Entries are paged by cursor**, not offset, so entries recorded meanwhile never shift a page.
+
+## Idempotency
+
+A client that gets no answer can send the same `POST` again with the same `Idempotency-Key`.
+
+- **The key is stored with the effect.** The key is first reserved: an empty row, inserted and committed
+  on its own. The transaction that records the account or transaction then locks that row
+  (`SELECT … FOR UPDATE`) and writes into it a SHA-256 of the request and the response, together with the
+  effect. If that transaction commits, both are there; if it does not (a refused request, an error, an
+  instance that dies before the commit), the row stays empty and the retry runs as if it were the first
+  attempt.
+- **The same request** means the same operation, the same id in the path and the same body as read:
+  spacing and field order do not matter, a different value does, and so does an amount written with
+  another scale (`10.0` for `10.00`). Keys are global and compared byte for byte, so `abc` and `ABC` are
+  two keys.
+- **The response is stored, not rebuilt**: a retried account opening shows the balance the account had
+  when it was opened, and the `Location` is built from the stored id.
+- **Only what took effect is remembered.** A refused request leaves an empty reservation, so its retry is
+  judged again against the balances of that moment: it may now succeed, and it never takes effect twice.
+  The key is not tied to the refused request either: it can still be used for a corrected one.
+- **Copies sent at once wait for each other** on the reserved row's lock. A copy that arrives while the
+  first attempt is still running waits, then answers with the stored response or, if the first attempt
+  took no effect, runs itself; no client ever sees "still in progress". The reservation is committed
+  before anyone waits on it: copies waiting on a row whose insert is then rolled back inherit gap locks
+  in MySQL and deadlock each other, which the concurrency tests caught. The key is always locked before
+  the accounts, so its lock cannot deadlock with theirs.
+- **Any instance.** The key and its lock live only in the shared MySQL, so it does not matter which
+  instance a retry reaches. The concurrency tests send the copies through the HTTP layer at once, each on
+  its own thread, database connection and transaction: they meet only in the database, as copies sent to
+  different instances would.
+- **A crash before the commit** is tested by a first attempt that writes and then fails before its
+  transaction commits, which MySQL rolls back as it does the open transaction of an instance that dies;
+  the retry with the same key records the transaction once.
+- The effect runs under `READ COMMITTED`, in a transaction `IdempotencyService` starts itself and never
+  joins from a caller (it refuses to run inside one): the reads that decide anything (the key, the
+  accounts) are locking reads, and a reversal needs it to see a reversal committed while it waited.
+- Keys are kept for at least 24 hours, as the contract promises; for now they are never purged.
 
 ## Persistence decisions
 

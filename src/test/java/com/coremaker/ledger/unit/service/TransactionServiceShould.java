@@ -20,7 +20,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -35,6 +37,7 @@ import com.coremaker.ledger.model.enums.Currency;
 import com.coremaker.ledger.model.enums.Direction;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.repository.TransactionRepository;
+import com.coremaker.ledger.service.IdempotencyService;
 import com.coremaker.ledger.service.TransactionService;
 import com.coremaker.ledger.validation.ReversalValidator;
 import com.coremaker.ledger.validation.TransactionValidator;
@@ -43,8 +46,16 @@ class TransactionServiceShould {
 
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final TransactionRepository transactionRepository = mock(TransactionRepository.class);
+    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
     private final TransactionService transactionService = new TransactionService(
-            accountRepository, transactionRepository, new TransactionValidator(), new ReversalValidator());
+            accountRepository, transactionRepository, new TransactionValidator(), new ReversalValidator(), idempotencyService);
+
+    @BeforeEach
+    void runEveryRequestAsANewOne() {
+
+        when(idempotencyService.commitOnce(any(), any(), any(), any(), any()))
+                .then(call -> call.<Supplier<?>>getArgument(4).get());
+    }
 
     @Test
     void moveTheMoneyAndRecordTheBalanceAfterEachEntry() {
@@ -55,7 +66,7 @@ class TransactionServiceShould {
         lockable(merchant, payouts, fees);
         when(transactionRepository.save(any())).then(returnsFirstArg());
 
-        var recorded = transactionService.post(request(
+        var recorded = transactionService.post("key", request(
                 entry(merchant, DEBIT, "100.00"), entry(payouts, CREDIT, "98.50"), entry(fees, CREDIT, "1.50")));
 
         assertThat(merchant.getBalance()).isEqualByComparingTo("25.50");
@@ -81,7 +92,7 @@ class TransactionServiceShould {
         lockable(merchant, payouts);
         when(transactionRepository.save(any())).then(returnsFirstArg());
 
-        transactionService.post(request(
+        transactionService.post("key", request(
                 entry(merchant, DEBIT, "50.00"), entry(merchant, CREDIT, "30.00"), entry(payouts, CREDIT, "20.00")));
 
         var saved = ArgumentCaptor.forClass(Transaction.class);
@@ -101,7 +112,7 @@ class TransactionServiceShould {
 
         var unbalanced = request(entry(merchant, DEBIT, "100.00"), entry(payouts, CREDIT, "99.00"));
 
-        assertThatThrownBy(() -> transactionService.post(unbalanced)).isInstanceOf(LedgerException.class);
+        assertThatThrownBy(() -> transactionService.post("key", unbalanced)).isInstanceOf(LedgerException.class);
 
         verify(transactionRepository, never()).save(any());
         assertThat(merchant.getBalance()).isEqualByComparingTo("25.50");
@@ -144,7 +155,7 @@ class TransactionServiceShould {
         lockable(merchant, payouts, fees);
         when(transactionRepository.save(any())).then(returnsFirstArg());
 
-        var reversal = transactionService.reverse(payout.getId());
+        var reversal = transactionService.reverse("key", payout.getId());
 
         assertThat(reversal.reversalOf()).isEqualTo(payout.getId());
         assertThat(reversal.description()).isEqualTo("Reversal of %s".formatted(payout.getId()));
@@ -169,7 +180,7 @@ class TransactionServiceShould {
         var payoutId = payout.getId();
         when(transactionRepository.existsByReversalOf(payoutId)).thenReturn(true);
 
-        assertThatThrownBy(() -> transactionService.reverse(payoutId))
+        assertThatThrownBy(() -> transactionService.reverse("key", payoutId))
                 .isInstanceOfSatisfying(LedgerException.class,
                         refusal -> assertThat(refusal.getCode()).isEqualTo(TRANSACTION_ALREADY_REVERSED));
 

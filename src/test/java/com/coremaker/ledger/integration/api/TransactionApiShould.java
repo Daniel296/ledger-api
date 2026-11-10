@@ -189,6 +189,7 @@ class TransactionApiShould {
 
         return mvc.post()
                 .uri("/v1/transactions")
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body)
                 .exchange();
@@ -198,6 +199,7 @@ class TransactionApiShould {
 
         return mvc.post()
                 .uri("/v1/transactions/{id}/reversal", transactionId)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
                 .exchange();
     }
 

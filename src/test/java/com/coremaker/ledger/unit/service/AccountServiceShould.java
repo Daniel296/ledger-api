@@ -14,26 +14,39 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.coremaker.ledger.dto.request.AccountRequest;
 import com.coremaker.ledger.exception.LedgerException;
 import com.coremaker.ledger.model.Account;
 import com.coremaker.ledger.repository.AccountRepository;
 import com.coremaker.ledger.service.AccountService;
+import com.coremaker.ledger.service.IdempotencyService;
 import com.coremaker.ledger.validation.AccountValidator;
 
 class AccountServiceShould {
 
     private final AccountRepository accountRepository = mock(AccountRepository.class);
-    private final AccountService accountService = new AccountService(accountRepository, new AccountValidator());
+    private final IdempotencyService idempotencyService = mock(IdempotencyService.class);
+    private final AccountService accountService = new AccountService(
+            accountRepository, new AccountValidator(), idempotencyService);
+
+    @BeforeEach
+    void runEveryRequestAsANewOne() {
+
+        when(idempotencyService.commitOnce(any(), any(), any(), any(), any()))
+                .then(call -> call.<Supplier<?>>getArgument(4).get());
+    }
 
     @Test
     void openAnAccountWithAZeroOverdraftLimitWhenNoneIsGiven() {
 
         when(accountRepository.save(any())).then(returnsFirstArg());
 
-        var account = accountService.open("EUR", null);
+        var account = accountService.open("key", new AccountRequest("EUR", null));
 
         assertThat(account.currency()).isEqualTo(EUR);
         assertThat(account.overdraftLimit()).isEqualTo("0.00");
@@ -46,7 +59,7 @@ class AccountServiceShould {
 
         when(accountRepository.save(any())).then(returnsFirstArg());
 
-        var account = accountService.open("JPY", new BigDecimal("1000"));
+        var account = accountService.open("key", new AccountRequest("JPY", new BigDecimal("1000")));
 
         assertThat(account.overdraftLimit()).isEqualTo("1000");
         assertThat(account.balance()).isEqualTo("0");
@@ -55,7 +68,9 @@ class AccountServiceShould {
     @Test
     void saveNothingWhenTheRequestBreaksARule() {
 
-        assertThatThrownBy(() -> accountService.open("GBP", null)).isInstanceOf(LedgerException.class);
+        var unsupported = new AccountRequest("GBP", null);
+
+        assertThatThrownBy(() -> accountService.open("key", unsupported)).isInstanceOf(LedgerException.class);
         verifyNoInteractions(accountRepository);
     }
 

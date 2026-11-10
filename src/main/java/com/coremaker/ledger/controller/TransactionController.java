@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -16,6 +17,7 @@ import com.coremaker.ledger.dto.response.TransactionResponse;
 import com.coremaker.ledger.service.TransactionService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -32,15 +34,19 @@ public class TransactionController {
     }
 
     @PostMapping
-    public ResponseEntity<TransactionResponse> post(@Valid @RequestBody TransactionRequest request) {
+    public ResponseEntity<TransactionResponse> post(
+            @RequestHeader("Idempotency-Key") @Size(min = 1, max = 255) String idempotencyKey,
+            @Valid @RequestBody TransactionRequest request) {
 
-        return created(transactionService.post(request));
+        return created(transactionService.post(idempotencyKey, request));
     }
 
     @PostMapping("/{transactionId}/reversal")
-    public ResponseEntity<TransactionResponse> reverse(@PathVariable UUID transactionId) {
+    public ResponseEntity<TransactionResponse> reverse(
+            @RequestHeader("Idempotency-Key") @Size(min = 1, max = 255) String idempotencyKey,
+            @PathVariable UUID transactionId) {
 
-        return created(transactionService.reverse(transactionId));
+        return created(transactionService.reverse(idempotencyKey, transactionId));
     }
 
     private static ResponseEntity<TransactionResponse> created(TransactionResponse transaction) {

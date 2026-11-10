@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -16,6 +17,7 @@ import com.coremaker.ledger.dto.response.AccountResponse;
 import com.coremaker.ledger.service.AccountService;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 
 @RestController
@@ -32,9 +34,11 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<AccountResponse> open(@Valid @RequestBody AccountRequest request) {
+    public ResponseEntity<AccountResponse> open(
+            @RequestHeader("Idempotency-Key") @Size(min = 1, max = 255) String idempotencyKey,
+            @Valid @RequestBody AccountRequest request) {
 
-        var account = accountService.open(request.currency(), request.overdraftLimit());
+        var account = accountService.open(idempotencyKey, request);
         var location = ServletUriComponentsBuilder
                 .fromCurrentRequest()
                 .path("/{id}")

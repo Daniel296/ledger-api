@@ -11,7 +11,6 @@ import java.util.UUID;
 import java.util.function.Function;
 
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.coremaker.ledger.dto.request.TransactionRequest;
@@ -36,6 +35,7 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final TransactionValidator transactionValidator;
     private final ReversalValidator reversalValidator;
+    private final IdempotencyService idempotencyService;
 
     @Transactional(readOnly = true)
     public TransactionResponse get(UUID id) {
@@ -43,8 +43,19 @@ public class TransactionService {
         return TransactionResponse.from(find(id));
     }
 
-    @Transactional
-    public TransactionResponse post(TransactionRequest request) {
+    public TransactionResponse post(String idempotencyKey, TransactionRequest request) {
+
+        return idempotencyService.commitOnce(idempotencyKey, "recordTransaction", request, TransactionResponse.class,
+                () -> recordTransaction(request));
+    }
+
+    public TransactionResponse reverse(String idempotencyKey, UUID id) {
+
+        return idempotencyService.commitOnce(idempotencyKey, "reverseTransaction", id, TransactionResponse.class,
+                () -> recordReversal(id));
+    }
+
+    private TransactionResponse recordTransaction(TransactionRequest request) {
 
         var transaction = new Transaction();
         transaction.setDescription(request.description());
@@ -56,8 +67,7 @@ public class TransactionService {
         return apply(transaction, accounts);
     }
 
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public TransactionResponse reverse(UUID id) {
+    private TransactionResponse recordReversal(UUID id) {
 
         var original = find(id);
         var reversal = new Transaction();

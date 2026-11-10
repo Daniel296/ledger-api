@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
@@ -43,9 +44,9 @@ class ConcurrentTransactionsShould {
         var funding = account("1000000.00");
         var merchant = account("0");
         var payouts = account("0");
-        transactionService.post(transfer(funding, merchant, "100.00"));
+        transactionService.post(newKey(), transfer(funding, merchant, "100.00"));
 
-        var failures = runAtOnce(20, attempt -> transactionService.post(transfer(merchant, payouts, "10.00")));
+        var failures = runAtOnce(20, attempt -> transactionService.post(newKey(), transfer(merchant, payouts, "10.00")));
 
         assertThat(failures)
                 .hasSize(10)
@@ -61,7 +62,7 @@ class ConcurrentTransactionsShould {
         var funding = account("1000000.00");
         var merchant = account("0");
 
-        var failures = runAtOnce(50, attempt -> transactionService.post(transfer(funding, merchant, "1.00")));
+        var failures = runAtOnce(50, attempt -> transactionService.post(newKey(), transfer(funding, merchant, "1.00")));
 
         assertThat(failures).isEmpty();
         assertThat(balance(merchant)).isEqualByComparingTo("50.00");
@@ -74,7 +75,7 @@ class ConcurrentTransactionsShould {
         var first = account("1000.00");
         var second = account("1000.00");
 
-        var failures = runAtOnce(40, attempt -> transactionService.post(attempt % 2 == 0
+        var failures = runAtOnce(40, attempt -> transactionService.post(newKey(), attempt % 2 == 0
                 ? transfer(first, second, "1.00")
                 : transfer(second, first, "1.00")));
 
@@ -88,9 +89,9 @@ class ConcurrentTransactionsShould {
 
         var funding = account("1000.00");
         var merchant = account("0");
-        var payment = transactionService.post(transfer(funding, merchant, "100.00"));
+        var payment = transactionService.post(newKey(), transfer(funding, merchant, "100.00"));
 
-        var failures = runAtOnce(10, attempt -> transactionService.reverse(payment.id()));
+        var failures = runAtOnce(10, attempt -> transactionService.reverse(newKey(), payment.id()));
 
         assertThat(failures)
                 .hasSize(9)
@@ -149,6 +150,11 @@ class ConcurrentTransactionsShould {
         account.setOverdraftLimit(new BigDecimal(overdraftLimit));
         account.setCreatedAt(Instant.now());
         return accountRepository.save(account);
+    }
+
+    private static String newKey() {
+
+        return UUID.randomUUID().toString();
     }
 
     private static TransactionRequest transfer(Account from, Account to, String amount) {

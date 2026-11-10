@@ -10,8 +10,11 @@ info:
     Conventions:
     - Amounts are decimal strings (`"125.50"`), never JSON numbers, so no client parses them as
       floating point.
-    - Every `POST` requires an `Idempotency-Key`. Retrying with the same key and body returns the
-      original response; the request takes effect at most once.
+    - Every `POST` requires an `Idempotency-Key`. A retry with the same key and the same request gets
+      the original response (status, body and `Location`) and the request takes effect at most once,
+      also when the retry reaches another instance or the first attempt failed before finishing. A
+      retry sent while the first attempt is still running waits for it. Only a request that took
+      effect is remembered: a refused one can be retried with the same key and is judged again.
     - An error is `{"errorCode", "message"}`: a stable code a system can act on, and a message
       naming the value at fault. Only the first broken rule is reported. Errors raised by the HTTP
       layer itself (400 for a malformed request, 405, 415, 500) come with Spring Boot's standard
@@ -52,8 +55,6 @@ paths:
                 $ref: '#/components/schemas/Account'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/IdempotencyConflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
 
@@ -177,8 +178,6 @@ paths:
                 $ref: '#/components/schemas/Transaction'
         '400':
           $ref: '#/components/responses/BadRequest'
-        '409':
-          $ref: '#/components/responses/IdempotencyConflict'
         '422':
           $ref: '#/components/responses/Unprocessable'
 
@@ -230,9 +229,8 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           description: |
-            The transaction was already reversed (`TRANSACTION_ALREADY_REVERSED`), is itself a
-            reversal (`REVERSAL_NOT_REVERSIBLE`), or a request with this idempotency key is still
-            in progress (`IDEMPOTENCY_REQUEST_IN_PROGRESS`).
+            The transaction was already reversed (`TRANSACTION_ALREADY_REVERSED`) or is itself a
+            reversal (`REVERSAL_NOT_REVERSIBLE`).
           content:
             application/json:
               schema:
@@ -248,8 +246,12 @@ components:
       required: true
       description: |
         A unique value the client generates per operation (a UUID is a good choice) and reuses
-        when retrying it. Keys are global: a request is the same only if method, path and body all
-        match; reusing a key with a different request is refused.
+        when retrying it. Keys are global and case-sensitive: a request is the same only if the
+        operation, its path and its body all match, the body as read (spacing and field order do
+        not matter; amounts are compared as written, so `10.0` and `10.00` differ). Once a request
+        has taken effect with a key, the same key with a different request, on any endpoint, is
+        refused with `IDEMPOTENCY_KEY_REUSED`; a key whose request was refused can be used again.
+        The ledger keeps a key for at least 24 hours.
       schema:
         type: string
         minLength: 1
@@ -435,8 +437,7 @@ components:
           description: |
             A stable, machine-readable reason. New codes may be added within v1.
             404: `ACCOUNT_NOT_FOUND`, `TRANSACTION_NOT_FOUND`.
-            409: `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`,
-            `IDEMPOTENCY_REQUEST_IN_PROGRESS`.
+            409: `TRANSACTION_ALREADY_REVERSED`, `REVERSAL_NOT_REVERSIBLE`.
             422: `INVALID_CURRENCY`, `UNSUPPORTED_CURRENCY`, `NEGATIVE_OVERDRAFT_LIMIT`,
             `TOO_FEW_ENTRIES`, `NON_POSITIVE_AMOUNT`, `TOO_MANY_DECIMAL_PLACES`, `UNKNOWN_ACCOUNT`,
             `CURRENCY_MISMATCH`, `UNBALANCED`, `OVERDRAFT_LIMIT_EXCEEDED`, `IDEMPOTENCY_KEY_REUSED`.
@@ -447,16 +448,10 @@ components:
     BadRequest:
       description: |
         The request is malformed: invalid JSON, a missing field, a value in the wrong format, a missing
-        idempotency key, or an invalid path or query parameter. Answered by the HTTP layer with
-        Spring Boot's standard error body.
+        or invalid idempotency key, or an invalid path or query parameter. Answered by the HTTP layer
+        with Spring Boot's standard error body.
     NotFound:
       description: The account or transaction in the path does not exist.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    IdempotencyConflict:
-      description: A request with this idempotency key is still in progress.
       content:
         application/json:
           schema:
