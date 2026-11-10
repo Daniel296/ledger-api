@@ -6,6 +6,7 @@ import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.TypeExcludeFilter;
 import org.springframework.boot.jdbc.autoconfigure.JdbcConnectionDetails;
+import org.springframework.boot.kafka.autoconfigure.KafkaConnectionDetails;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
@@ -20,7 +21,7 @@ class SecondInstanceConfiguration {
 
     @Bean
     @Lazy
-    SecondInstance secondInstance(JdbcConnectionDetails database) {
+    SecondInstance secondInstance(JdbcConnectionDetails database, KafkaConnectionDetails kafka) {
 
         var context = new SpringApplicationBuilder(LedgerApiApplication.class)
                 .web(WebApplicationType.NONE)
@@ -28,7 +29,8 @@ class SecondInstanceConfiguration {
                 .properties(Map.of(
                         "spring.datasource.url", database.getJdbcUrl(),
                         "spring.datasource.username", database.getUsername(),
-                        "spring.datasource.password", database.getPassword()))
+                        "spring.datasource.password", database.getPassword(),
+                        "spring.kafka.bootstrap-servers", String.join(",", kafka.getBootstrapServers())))
                 .run();
 
         return new SecondInstance(context);
