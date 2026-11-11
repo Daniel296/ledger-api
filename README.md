@@ -178,12 +178,17 @@ flowchart LR
     payments["Payment system"] -->|payment-settled| messaging
     controller --> service
     messaging --> service
-    messaging -.->|"refused: unchanged"| dlt["payment-settled-dlt"]
-    mysql[("MySQL<br/>accounts, transactions, entries,<br/>idempotency keys, outbox")]
-    service -->|"one database transaction: lock, check, write"| mysql
-    relay["OutboxRelay, every 200 ms"] -->|reads the outbox| mysql
+    messaging -.->|invalid payment| dlt["Dead letters"]
+    service -->|one transaction| mysql[("MySQL")]
+    relay["Outbox relay"] -->|polls the outbox| mysql
     relay -->|transaction-recorded| consumers["Other services"]
 ```
+
+A request and a settled payment go through the same `service`, which records a transaction in one database
+transaction: it locks the accounts, checks the rules, and writes the transaction, its entries, the answer on the
+idempotency key and a row in the `outbox`. The outbox relay publishes those rows to `transaction-recorded`. A
+`payment-settled` message the ledger cannot record (malformed, an unknown account, the wrong currency) goes unchanged to
+the dead-letter topic `payment-settled-dlt`, so the messages behind it go on; any other failure is retried.
 
 ### API
 
