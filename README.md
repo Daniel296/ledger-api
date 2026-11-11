@@ -12,7 +12,7 @@ Java 17, Spring Boot 4, Spring Data JPA (Hibernate), MySQL 8.4, Liquibase, Kafka
 ```mermaid
 %%{init: {"flowchart": {"padding": 24}}}%%
 flowchart LR
-    client["API client"] -->|REST| controller
+    client["API client"] --->|REST| controller
     payments["Payment system"] --> settled
     subgraph kafkaIn["Kafka"]
         settled["payment-settled"]
@@ -26,7 +26,7 @@ flowchart LR
         repository
     end
     settled --> messaging
-    messaging -.->|invalid payment| dlt
+    dlt -.-|"← invalid payment"| messaging
     controller --> service
     messaging --> service
     service -->|one transaction| repository
@@ -35,13 +35,17 @@ flowchart LR
     subgraph kafkaOut["Kafka"]
         recorded["transaction-recorded"]
     end
-    relay --> recorded
+    relay ---> recorded
     recorded --> consumers["Other services"]
-    classDef kafka fill:#ffedd5,stroke:#ea580c,color:#1c1917
+    classDef ours fill:#dbeafe,stroke:#2563eb,color:#1e3a8a
+    classDef kafka fill:#ffedd5,stroke:#ea580c,color:#7c2d12
+    classDef external fill:#f3f4f6,stroke:#6b7280,color:#111827
+    class controller,messaging,service,relay,repository ours
     class settled,dlt,recorded kafka
+    class client,payments,consumers,mysql external
+    style ledger fill:#eff6ff,stroke:#2563eb
     style kafkaIn fill:#fff7ed,stroke:#ea580c
     style kafkaOut fill:#fff7ed,stroke:#ea580c
-    style ledger fill:#f5f3ff,stroke:#7c3aed
 ```
 
 - A request and a settled payment go through the same `service`, which records a transaction in one database
@@ -49,8 +53,8 @@ flowchart LR
   idempotency key and a row in the `outbox`.
 - The outbox relay publishes those rows to `transaction-recorded`.
 - A `payment-settled` message the ledger cannot record (malformed, an unknown account, the wrong currency) goes
-  unchanged to `payment-settled-dlt`, a Kafka topic like the other two, so the messages behind it go on. Any other
-  failure is retried.
+  unchanged to `payment-settled-dlt`, a Kafka topic next to `payment-settled`, so the messages behind it go on. Any
+  other failure is retried.
 
 ### API
 
