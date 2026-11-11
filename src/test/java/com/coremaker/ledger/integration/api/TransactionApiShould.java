@@ -216,10 +216,12 @@ class TransactionApiShould {
     }
 
     @Test
-    void rejectMoreEntriesOrALongerIdempotencyKeyThanAllowed() {
+    void rejectMoreEntriesALargerAmountOrALongerIdempotencyKeyThanAllowed() {
 
         var entries = Collections.nCopies(101, entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var tooManyEntries = recordTransaction("Payout", entries.toArray(String[]::new));
+        var tooLargeAmount = recordTransaction("Payout",
+                entry(UUID.randomUUID(), "DEBIT", "1e2147483647"), entry(UUID.randomUUID(), "CREDIT", "1e2147483647"));
         var payout = transaction("Payout",
                 entry(UUID.randomUUID(), "DEBIT", "1.00"), entry(UUID.randomUUID(), "CREDIT", "1.00"));
         var noIdempotencyKey = mvc.post()
@@ -230,6 +232,7 @@ class TransactionApiShould {
         var tooLongIdempotencyKey = post("k".repeat(256), payout);
 
         assertThat(tooManyEntries).hasStatus(HttpStatus.BAD_REQUEST);
+        assertThat(tooLargeAmount).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(noIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
         assertThat(tooLongIdempotencyKey).hasStatus(HttpStatus.BAD_REQUEST);
     }

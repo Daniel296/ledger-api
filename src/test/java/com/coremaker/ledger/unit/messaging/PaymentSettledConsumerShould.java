@@ -68,8 +68,9 @@ class PaymentSettledConsumerShould {
                 arguments(payment("pay-1", UUID.randomUUID(), "10.00", "GBP"), "GBP"),
                 arguments(payment(" ", UUID.randomUUID(), "10.00", "EUR"), "paymentId must not be blank"),
                 arguments(payment("p".repeat(201), UUID.randomUUID(), "10.00", "EUR"), "paymentId size must be between"),
-                arguments(payment("pay-1", UUID.randomUUID(), "1234567890123456", "EUR"), "amount numeric value out of bounds"),
+                arguments(payment("pay-1", UUID.randomUUID(), "1234567890123456", "EUR"), "amount must be less than or equal to"),
                 arguments(payment("pay-1", UUID.randomUUID(), "10.00001", "EUR"), "amount numeric value out of bounds"),
+                arguments(payment("pay-1", UUID.randomUUID(), "1e2147483647", "EUR"), "amount must be less than or equal to"),
                 arguments("""
                         {"paymentId": "pay-1", "amount": "10.00", "currency": "EUR"}
                         """, "merchantAccountId must not be null"));

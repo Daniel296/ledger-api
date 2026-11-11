@@ -63,6 +63,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '422':
           $ref: '#/components/responses/Unprocessable'
+        '503':
+          $ref: '#/components/responses/AccountBusy'
 
   /v1/accounts/{accountId}:
     get:
@@ -490,9 +492,9 @@ components:
             message: Debits total 100.00 but credits total 99.00
     AccountBusy:
       description: |
-        An account of the request stayed locked by other transactions for longer than the ledger
-        waits (a few seconds). Nothing was recorded; retry after `Retry-After` seconds with the same
-        idempotency key.
+        An account of the request, or its idempotency key while a copy of it was still running, stayed
+        locked for longer than the ledger waits (a few seconds). Nothing was recorded; retry after
+        `Retry-After` seconds with the same idempotency key.
       headers:
         Retry-After:
           required: true
